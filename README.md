@@ -83,4 +83,4 @@ Build the static site with `npm run build` and deploy the contents of `dist/`. F
 
 ## License
 
-No license has been selected for this repository yet. Add a license file before granting reuse or redistribution rights.
+The original BGI Alumento materials are covered by the [BGI Alumento Proprietary License](LICENSE). This is not an open-source license. Third-party software, fonts, images, and other assets remain subject to their respective licenses and terms. Repository visibility is configured separately on GitHub.
