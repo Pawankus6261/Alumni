@@ -3,11 +3,23 @@ node_modules/
 dist/
 coverage/
 .vite/
+__pycache__/
+*.py[cod]
+.venv/
 
 # Local environment and secrets
 .env
 .env.*
 !.env.example
+
+# Private database exports may contain personal records or account credentials
+alumni_db*.sql
+backend/private_uploads/
+backend/profile_images/
+backend/gallery_images/
+backend/backups/
+backend/*.sqlite3
+backend/*.db
 
 # Logs and debug output
 *.log

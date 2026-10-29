@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD)
 
-> **Implementation status:** This document describes the product vision and requirements; it is not a description of all currently implemented capabilities. The current repository is a frontend prototype with browser-local sample data. A backend API, database, authentication, payment processing, and email delivery are not currently included.
+> **Implementation status:** This document describes the product vision and requirements; it is not a guarantee that every requirement is implemented. The repository now includes a React frontend and FastAPI service connected to the supplied MariaDB schema for core alumni, membership, event, gallery, and review workflows. External payment processing and email delivery are not included.
 
 ## BGI ALUMENTO: Bansal Group of Institutions (BIST) Modern Alumni Platform
 ### Comprehensive Modernization & Recreation of `bistalumni.in`
@@ -57,7 +57,7 @@ graph TD
 ```
 
 #### Persona 1: Abroad / Elite Alumnus
-- **Profile:** Yash Agrawal (BIST IT 2015, Software Engineer at Amazon, Seattle / Nitin Gupta, Vodafone UK)
+- **Profile:** A verified alumnus profile populated from the connected alumni database.
 - **Needs:** Connect with alma mater, inspire students via guest lectures, offer referrals, and participate in global chapter meetups.
 
 #### Persona 2: Domestic Graduate / BISTAA Applicant

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import ImageUploadField from '../components/ImageUploadField';
+import DataLoadNotice from '../components/DataLoadNotice';
+import SubmissionSuccessModal from '../components/SubmissionSuccessModal';
 import { 
   QrCode, 
   CheckCircle2, 
@@ -13,7 +15,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showToast }) {
+export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showToast, dataLoadFailed, dataLoading, onRetryData }) {
   const [enrollment, setEnrollment] = useState('');
   const [name, setName] = useState('');
   const [branch, setBranch] = useState('');
@@ -23,6 +25,8 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
   const [slipPreviewUrl, setSlipPreviewUrl] = useState(null);
   const [detectedRecord, setDetectedRecord] = useState(null);
   const [copiedUpi, setCopiedUpi] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submission, setSubmission] = useState(null);
 
   // Autocomplete logic
   const handleEnrollmentChange = (val) => {
@@ -65,7 +69,7 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
     setTimeout(() => setCopiedUpi(false), 3000);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     // Validate 12-digit UTR
@@ -81,32 +85,25 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
     }
 
     const newApp = {
-      id: `app-${Date.now()}`,
       enrollment: enrollment.trim().toUpperCase(),
       name: name.trim(),
       branch: branch.trim(),
       college: college,
-      batch: detectedRecord?.batch || 2024,
-      amount: '300',
       upi_transaction_id: cleanUtr,
-      transaction_slip: slipPreviewUrl || 'assets/bistaa_qr.jpg',
-      status: 'PENDING_VERIFICATION',
-      membership_id: null,
-      submitted_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      verified_at: null,
-      verified_by: null
     };
 
-    onSubmitBistaa(newApp);
-
+    setIsSubmitting(true);
     try {
-      confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
-    } catch (e) {}
-
-    showToast('BISTAA membership application submitted! Opening status tracker...', 'success');
-    setTimeout(() => {
-      setView('status');
-    }, 1200);
+      const result = await onSubmitBistaa(newApp, slipFile);
+      try {
+        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+      } catch (e) {}
+      setSubmission({ reference: result?.id || '', utr: cleanUtr });
+    } catch (error) {
+      showToast(error.message || 'BISTAA application could not be submitted.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -171,7 +168,7 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g. 0112CS151042 or 0114..."
+                  placeholder="Enter your enrollment number"
                   style={{ fontFamily: 'var(--font-mono)' }}
                   required
                   value={enrollment}
@@ -180,6 +177,7 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
                 <div className="form-hint">
                   Enter your university enrollment number. Registered graduate details will auto-fill.
                 </div>
+                {dataLoadFailed && alumniList.length === 0 && <DataLoadNotice label="Enrollment records" onRetry={onRetryData} loading={dataLoading} />}
                 {detectedRecord && (
                   <div style={{
                     marginTop: '0.4rem',
@@ -266,7 +264,7 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
                   type="text"
                   maxLength={12}
                   className="form-input"
-                  placeholder="e.g. 428910394821"
+                  placeholder="Enter the 12-digit UTR from your receipt"
                   style={{ fontFamily: 'var(--font-mono)', letterSpacing: '1px', fontWeight: 600 }}
                   required
                   value={utr}
@@ -298,9 +296,10 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
               <button 
                 type="submit" 
                 className="btn btn-primary"
+                disabled={isSubmitting}
                 style={{ width: '100%', padding: '0.85rem', fontSize: '1rem', marginTop: '0.5rem' }}
               >
-                <ShieldCheck size={18} /> Submit BISTAA Application &amp; Verify
+                <ShieldCheck size={18} /> {isSubmitting ? 'Submitting application…' : 'Submit BISTAA Application & Verify'}
               </button>
             </form>
           </div>
@@ -385,7 +384,7 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
               </div>
 
               <div style={{ marginTop: '1.25rem', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                Help Desk: <b>+91 8878468786</b> • Mon–Sat (09:00 AM – 05:00 PM)
+                Help Desk: <a href="tel:+919109954681">+91 91099 54681</a> · <a href="tel:+919109954642">+91 91099 54642</a>
               </div>
             </div>
           </div>
@@ -394,6 +393,14 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
 
         </div>
       </div>
+      {submission && <SubmissionSuccessModal
+        eyebrow="BISTAA APPLICATION RECEIVED"
+        title="Your application is submitted"
+        message="Your application and payment proof are in the verification queue. Track the review using your enrollment number or UPI reference."
+        reference={submission.reference || submission.utr}
+        actionLabel="Track application"
+        onAction={() => setView('status')}
+      />}
     </div>
   );
 }

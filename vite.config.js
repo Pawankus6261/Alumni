@@ -8,6 +8,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 3000,
-    open: true
+    open: true,
+    proxy: {
+      '/api': 'http://127.0.0.1:8000',
+      '/media/profiles': 'http://127.0.0.1:8000',
+      '/media/gallery': 'http://127.0.0.1:8000'
+    }
   }
 });

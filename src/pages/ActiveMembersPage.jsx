@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
+import DataLoadNotice from '../components/DataLoadNotice';
+import Pagination from '../components/Pagination';
 import { 
   Award, 
   ShieldCheck, 
@@ -12,16 +14,27 @@ import {
   ExternalLink
 } from 'lucide-react';
 
-export default function ActiveMembersPage({ alumniList, onOpenDigitalPass }) {
+export default function ActiveMembersPage({ alumniList, onOpenDigitalPass, dataLoadFailed, dataLoading, onRetryData }) {
   const [search, setSearch] = useState('');
   const [collegeFilter, setCollegeFilter] = useState('ALL');
   const [batchFilter, setBatchFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const pageSize = 12;
 
-  const activeMembers = alumniList.filter(a => a.is_bistaa_member);
+  const memberDetailsScore = member => [
+    ['connected_to', 4], ['pos', 3], ['companyloc', 2], ['batch', 1],
+    ['course', 1], ['companysector', 1], ['img_url', 1],
+  ].reduce((score, [key, weight]) => score + (String(member[key] ?? '').trim() ? weight : 0), 0);
+  const activeMembers = alumniList.filter(a => a.is_bistaa_member).slice().sort((a, b) =>
+    memberDetailsScore(b) - memberDetailsScore(a) ||
+    String(a.connected_to || '').localeCompare(String(b.connected_to || '')) ||
+    `${a.firstname || ''} ${a.lastname || ''}`.localeCompare(`${b.firstname || ''} ${b.lastname || ''}`),
+  );
+  const batchOptions = [...new Set(activeMembers.map(member => Number(member.batch)).filter(batch => Number.isInteger(batch) && batch >= 1980 && batch <= new Date().getFullYear()))].sort((a, b) => b - a);
 
   const filtered = activeMembers.filter(a => {
-    if (collegeFilter !== 'ALL' && a.college !== collegeFilter) return false;
-    if (batchFilter !== 'ALL' && String(a.batch) !== batchFilter) return false;
+            if (collegeFilter !== 'ALL' && a.college !== collegeFilter) return false;
+            if (batchFilter !== 'ALL' && String(a.batch ?? '') !== batchFilter) return false;
     if (search.trim()) {
       const q = search.toLowerCase().trim();
       const haystack = `${a.firstname} ${a.lastname} ${a.connected_to} ${a.pos} ${a.course} ${a.bistaa_id}`.toLowerCase();
@@ -29,6 +42,13 @@ export default function ActiveMembersPage({ alumniList, onOpenDigitalPass }) {
     }
     return true;
   });
+
+  const memberEmployer = alumnus => [alumnus.connected_to, alumnus.pos ? `(${alumnus.pos})` : ''].filter(Boolean).join(' ');
+
+  useEffect(() => setPage(1), [search, collegeFilter, batchFilter]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageMembers = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div style={{ minHeight: '80vh' }}>
@@ -90,22 +110,24 @@ export default function ActiveMembersPage({ alumniList, onOpenDigitalPass }) {
                 onChange={(e) => setBatchFilter(e.target.value)}
               >
                 <option value="ALL">All Batches</option>
-                {[2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015, 2014, 2013, 2012, 2011, 2010, 2009, 2008, 2007].map(b => (
+                {batchOptions.map(b => (
                   <option key={b} value={b}>Batch of {b}</option>
                 ))}
               </select>
             </label>
           </div>
 
-          <div className="active-members-result-count" aria-live="polite">
+          {!(dataLoadFailed && alumniList.length === 0) && <div className="active-members-result-count" aria-live="polite">
             <span>Verified lifetime members</span>
             <strong>{filtered.length} <span>of {activeMembers.length}</span></strong>
-          </div>
+          </div>}
+          <Pagination page={currentPage} pageSize={pageSize} total={filtered.length} onPageChange={setPage} label="members" />
         </div>
 
         {/* Active Members Grid */}
+        {dataLoadFailed && alumniList.length === 0 ? <DataLoadNotice label="Verified member list" onRetry={onRetryData} loading={dataLoading} /> : <>
         <div className="alumni-grid active-members-grid">
-          {filtered.map(alumnus => (
+          {pageMembers.map(alumnus => (
             <div 
               key={alumnus.id} 
               className="alumnus-card active-member-card"
@@ -136,23 +158,24 @@ export default function ActiveMembersPage({ alumniList, onOpenDigitalPass }) {
 
                 <div className="alumnus-card-body active-member-card-body">
                   <div className="meta-details-list">
-                    <div className="meta-detail-row">
+                    {memberEmployer(alumnus) && <div className="meta-detail-row">
                       <Building size={15} />
-                      <span><b>{alumnus.connected_to}</b> ({alumnus.pos})</span>
-                    </div>
+                      <span>{alumnus.connected_to && <b>{alumnus.connected_to}</b>}{alumnus.connected_to && alumnus.pos ? ' ' : ''}{alumnus.pos && <span>({alumnus.pos})</span>}</span>
+                    </div>}
                     <div className="meta-detail-row">
                       <GraduationCap size={15} />
-                      <span>{alumnus.college} • {alumnus.course} (Batch {alumnus.batch})</span>
+                      <span>{alumnus.college || 'BIST'}{alumnus.course ? ` • ${alumnus.course}` : ''} (Batch {alumnus.batch || '—'})</span>
                     </div>
-                    <div className="meta-detail-row">
+                    {alumnus.companyloc && <div className="meta-detail-row">
                       <MapPin size={15} />
                       <span>{alumnus.companyloc}</span>
-                    </div>
+                    </div>}
+                    {!memberEmployer(alumnus) && !alumnus.companyloc && <div className="active-member-profile-missing">Professional details not provided in the linked alumni profile.</div>}
                   </div>
 
                   <div className="alumni-tags-row">
-                    <span className="tag-chip tag-batch">Class of {alumnus.batch}</span>
-                    <span className="tag-chip tag-sector">{alumnus.companysector}</span>
+                    <span className="tag-chip tag-batch">{alumnus.batch ? `Batch of ${alumnus.batch}` : 'Batch unavailable'}</span>
+                    {alumnus.companysector && <span className="tag-chip tag-sector">{alumnus.companysector}</span>}
                     <span className="tag-chip tag-active-bistaa">
                       <ShieldCheck size={12} /> BISTAA Lifetime Pass
                     </span>
@@ -188,6 +211,8 @@ export default function ActiveMembersPage({ alumniList, onOpenDigitalPass }) {
             </div>
           )}
         </div>
+        {filtered.length > pageSize && <Pagination page={currentPage} pageSize={pageSize} total={filtered.length} onPageChange={setPage} label="members" />}
+        </>}
 
         </div>
       </div>

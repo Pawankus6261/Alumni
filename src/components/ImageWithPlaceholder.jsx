@@ -23,6 +23,8 @@ export default function ImageWithPlaceholder({
         alt={alt}
         className={className}
         style={style}
+        loading="lazy"
+        decoding="async"
         onError={() => setFailed(true)}
       />
     );

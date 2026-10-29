@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { X, ZoomIn, Sparkles, Award, GraduationCap, Users } from 'lucide-react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
+import DataLoadNotice from '../components/DataLoadNotice';
 
-export default function GalleryPage({ galleryList }) {
+export default function GalleryPage({ galleryList, dataLoadFailed, dataLoading, onRetryData }) {
   const [activeLightboxImage, setActiveLightboxImage] = useState(null);
 
   const categories = [
@@ -42,7 +43,7 @@ export default function GalleryPage({ galleryList }) {
         <div className="container">
           
           <div className="gallery-photo-sections">
-            {photoSections.map(section => {
+            {dataLoadFailed && galleryList.length === 0 ? <DataLoadNotice label="Gallery photos" onRetry={onRetryData} loading={dataLoading} /> : photoSections.map(section => {
               const Icon = section.icon;
               return (
                 <section key={section.id} className="gallery-photo-section" aria-labelledby={`gallery-section-${section.id}`}>

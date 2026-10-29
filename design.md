@@ -212,8 +212,8 @@ sequenceDiagram
     Alum->>Vite: Enter Enrollment No (e.g. 0112CS181045)
     Vite->>API: GET /api/v1/bistaa/lookup?enroll=0112CS181045
     API->>DB: Query alumni_users by enroll_no
-    DB-->>API: Match found: Yash Agrawal (Computer Science, BIST)
-    API-->>Vite: {name: "Yash Agrawal", branch: "Computer Science", college: "BIST"}
+    DB-->>API: Match found: verified alumnus profile
+    API-->>Vite: profile name, branch, and college from the database
     Vite->>Alum: Auto-fill Name & Branch, Show 12-digit UTR & Slip Upload
     Alum->>Vite: Enter UTR (e.g. 428910394821) + Upload Slip image
     Vite->>API: POST /api/v1/bistaa/submit (Multipart Form)
@@ -328,10 +328,10 @@ alumni-web/
 |  | ---------------------------------         |  | -----------------------------     | |
 |  | Enrollment Number *                       |  |  +-----------------------------+  | |
 |  | [ 0112CS181045                      ]     |  |  |     [ DYNAMIC UPI QR ]      |  | |
-|  | (Auto-detected: Yash Agrawal - CSE BIST)  |  |  |   Scan with GPay/PhonePe    |  | |
+|  | (Auto-detected from verified alumni record) |  |  |   Scan with UPI app          |  | |
 |  |                                           |  |  +-----------------------------+  | |
 |  | Alumnus Full Name                         |  |                                   | |
-|  | [ Yash Agrawal                   (Lock) ] |  |  Lifetime Membership Fee: ₹300/-  | |
+|  | [ Verified alumnus                (Lock) ] |  |  Lifetime Membership Fee: ₹300/-  | |
 |  |                                           |  |                                   | |
 |  | Branch & College                          |  |  [Step 1] Scan QR & Pay ₹300      | |
 |  | [ Computer Science Engg. - BIST  (Lock) ] |  |  [Step 2] Note 12-Digit UPI UTR   | |
@@ -358,7 +358,7 @@ alumni-web/
 |                                                                                       |
 |  Registration Summary:                                                                |
 |  - Enrollment No:    0112CS181045                                                     |
-|  - Alumnus Name:     Yash Agrawal                                                     |
+|  - Alumnus Name:     Verified alumnus                                                  |
 |  - College & Branch: BIST | Computer Science Engg. (Batch of 2015)                     |
 |  - Membership Fee:   ₹300.00 [PAID]                                                   |
 |  - UPI UTR No:       428910394821                                                     |

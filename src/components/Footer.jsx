@@ -1,15 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Facebook, Instagram, Linkedin, Youtube, Twitter } from 'lucide-react';
 import { BGI_BHOPAL_LOGO } from '../brand';
 
 export default function Footer({ setView }) {
+  const [subscribeEmail, setSubscribeEmail] = useState('');
   const nav = (id) => {
     setView(id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const submitSubscription = event => {
+    event.preventDefault();
+    const subject = encodeURIComponent('BISTAA alumni updates subscription request');
+    const body = encodeURIComponent(`Hello BISTAA Alumni Office,\n\nPlease send alumni, campus, and event updates to this email address: ${subscribeEmail.trim()}\n\nThank you.`);
+    window.location.href = `mailto:info@bistbpl.in?subject=${subject}&body=${body}`;
   };
 
   return (
     <footer className="premium-footer">
       <div className="container">
+        <section className="footer-subscribe" aria-labelledby="footer-subscribe-title">
+          <div>
+            <h2 id="footer-subscribe-title">Get BISTAA updates</h2>
+            <p>Alumni news, campus updates, and upcoming events. Subscribe opens an email request to the Alumni Office.</p>
+          </div>
+          <form className="footer-subscribe-form" onSubmit={submitSubscription}>
+            <label className="sr-only" htmlFor="footer-subscribe-email">Email address</label>
+            <input id="footer-subscribe-email" type="email" autoComplete="email" placeholder="Your email address" value={subscribeEmail} onChange={event => setSubscribeEmail(event.target.value)} required />
+            <button type="submit">Subscribe</button>
+          </form>
+        </section>
         <div className="footer-grid">
 
           {/* Brand Col */}
@@ -36,9 +55,13 @@ export default function Footer({ setView }) {
                 <span className="material-symbols-outlined" aria-hidden="true">location_on</span>
                 <span>Kokta, Anand Nagar, Bhopal, MP 462021</span>
               </span>
-              <a className="footer-contact-item" href="mailto:alumni@bist.ac.in">
+              <a className="footer-contact-item" href="http://12.173.120.123/" target="_blank" rel="noopener noreferrer">
+                <span className="material-symbols-outlined" aria-hidden="true">call</span>
+                <span>+91 91099 54681 · +91 91099 54642</span>
+              </a>
+              <a className="footer-contact-item" href="mailto:info@bistbpl.in">
                 <span className="material-symbols-outlined" aria-hidden="true">mail</span>
-                <span>alumni@bist.ac.in</span>
+                <span>info@bistbpl.in</span>
               </a>
             </address>
           </div>
@@ -94,12 +117,26 @@ export default function Footer({ setView }) {
 
         </div>
 
+        <section className="footer-social-strip" aria-label="BGI social media">
+          <div className="footer-social-block">
+            <div className="footer-social-title">Follow BGI</div>
+            <div className="footer-social-links">
+              <a href="https://www.facebook.com/BgiBhopalOfficial" target="_blank" rel="noopener noreferrer" aria-label="BGI on Facebook" title="Facebook"><Facebook aria-hidden="true" /></a>
+              <a href="https://www.instagram.com/bgibhopal/" target="_blank" rel="noopener noreferrer" aria-label="BGI on Instagram" title="Instagram"><Instagram aria-hidden="true" /></a>
+              <a href="https://www.linkedin.com/company/bgibhopal/" target="_blank" rel="noopener noreferrer" aria-label="BGI on LinkedIn" title="LinkedIn"><Linkedin aria-hidden="true" /></a>
+              <a href="https://www.youtube.com/@bgibhopal" target="_blank" rel="noopener noreferrer" aria-label="BGI on YouTube" title="YouTube"><Youtube aria-hidden="true" /></a>
+              <a href="https://twitter.com/BGIBhopal/" target="_blank" rel="noopener noreferrer" aria-label="BGI on X" title="X"><Twitter aria-hidden="true" /></a>
+            </div>
+          </div>
+        </section>
+
         <div className="footer-divider" />
         <div className="footer-bottom">
           <p className="footer-bottom-left">
             &copy; {new Date().getFullYear()} Bansal Institute of Science &amp; Technology (BIST) Bhopal.
             All Rights Reserved. Bansal Group of Institutes (BGI) Network.
           </p>
+          <p className="footer-credit">Designed &amp; Developed by <a href="https://devlinkhub.in" target="_blank" rel="noopener noreferrer"><strong>DevLinkHub Team</strong></a></p>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <span className="footer-accred-badge">BISTAA</span>
             <span className="footer-accred-badge">Est. 2000</span>

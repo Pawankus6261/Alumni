@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowRight, Users, Calendar, BookOpen, Award, MapPin, ShieldCheck } from 'lucide-react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
+import DataLoadNotice from '../components/DataLoadNotice';
 
 const AVATAR_COLORS = [
   '#17365B',
@@ -11,7 +12,7 @@ const AVATAR_COLORS = [
   '#697586'
 ];
 
-export default function HomePage({ alumniList, eventsList, setView, onRsvpClick }) {
+export default function HomePage({ alumniList, membersList = [], eventsList, setView, onRsvpClick, dataLoadFailed, dataLoading, onRetryData }) {
   const [searchInput, setSearchInput] = useState('');
 
   const handleSearchSubmit = (e) => {
@@ -19,7 +20,36 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
     setView('directory');
   };
 
-  const featuredAlumni = alumniList.slice(0, 6);
+  const verifiedMemberCount = new Set((membersList || [])
+    .filter(member => member.is_bistaa_member)
+    .map(member => String(member.enroll_no || member.bistaa_id || `${member.firstname || ''} ${member.lastname || ''}`).replace(/[^a-z0-9]/gi, '').toLowerCase())
+    .filter(Boolean)).size;
+
+  const featuredAlumni = (() => {
+    const leadingOrganizations = [
+      /nvidia/, /google|alphabet/, /microsoft/, /amazon|\baws\b/, /apple/, /meta|facebook/,
+      /salesforce/, /adobe/, /servicenow/, /oracle/, /ibm/, /walmart/, /vodafone/,
+      /accenture/, /deloitte/, /tata consultancy|\btcs\b/, /infosys/, /wipro/, /cognizant/, /capgemini/,
+    ];
+    const organizationRank = member => {
+      const organization = String(member.connected_to || '').toLowerCase();
+      const index = leadingOrganizations.findIndex(pattern => pattern.test(organization));
+      return index < 0 ? leadingOrganizations.length : index;
+    };
+    const profileCompleteness = member => ['pos', 'companyloc', 'course', 'batch', 'companysector']
+      .reduce((score, key) => score + (String(member[key] ?? '').trim() ? 1 : 0), 0);
+    const seen = new Set();
+    return (membersList || []).filter(member => member.is_bistaa_member && String(member.connected_to || '').trim())
+      .slice().sort((a, b) => organizationRank(a) - organizationRank(b) || profileCompleteness(b) - profileCompleteness(a))
+      .filter(member => {
+      const enrollment = String(member.enroll_no || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+      const membershipId = String(member.bistaa_id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+      const key = enrollment || membershipId || `${member.firstname || ''} ${member.lastname || ''}`.trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 6);
+  })();
   const upcomingEvents = eventsList ? eventsList.slice(0, 3) : [];
 
   return (
@@ -43,13 +73,12 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
 
               <h1 className="hero-title">
                 The Lifelong Bond of
-                <span className="hero-title-accent">Bansal Graduates.</span>
+                <span className="hero-title-accent">Bansalites....</span>
               </h1>
 
               <p className="hero-subtitle">
-                Across 25 years of institutional history, our graduates have led innovation
-                in technology, public administration, engineering, and global entrepreneurship.
-                Reconnect with your cohort, celebrate shared experiences, and stay anchored to your alma mater.
+                United by a shared experience at BIST, our alumni carry their education into a wide range of professions and communities.
+                Reconnect with your batch, explore fellow graduates’ journeys, and remain part of the Bansal alumni network.
               </p>
 
               <div className="hero-cta-row">
@@ -83,7 +112,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
               <div className="hero-bento-grid">
                 <div className="hero-bento-tile hero-bento-top-a">
                   <ImageWithPlaceholder
-                    src="https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=500&auto=format&fit=crop&q=85"
+                    src="https://bansalgroup-assets.s3.ap-south-1.amazonaws.com/STG/Test_BGI_Bhopal/placement-day-202618.jpeg"
                     alt="Graduation celebration"
                     placeholderLabel="Graduation celebration"
                   />
@@ -91,7 +120,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                 </div>
                 <div className="hero-bento-tile hero-bento-top-b">
                   <ImageWithPlaceholder
-                    src="https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=500&auto=format&fit=crop&q=85"
+                    src="https://bansalgroup-assets.s3.ap-south-1.amazonaws.com/STG/Test_BGI_Bhopal/48.jpg"
                     alt="Students walking together on campus"
                     placeholderLabel="Campus life"
                   />
@@ -99,7 +128,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                 </div>
                 <div className="hero-bento-tile hero-bento-left">
                   <ImageWithPlaceholder
-                    src="https://images.unsplash.com/photo-1562774053-701939374585?w=800&auto=format&fit=crop&q=85"
+                    src="https://bansalgroup-assets.s3.ap-south-1.amazonaws.com/STG/Test_BGI_Bhopal/Bansal-Bonanza17.jpg"
                     alt="University campus architecture"
                     placeholderLabel="Bansal Institute campus"
                   />
@@ -107,7 +136,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                 </div>
                 <div className="hero-bento-tile hero-bento-featured">
                   <ImageWithPlaceholder
-                    src="https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=900&auto=format&fit=crop&q=85"
+                    src="https://bansalgroup-assets.s3.ap-south-1.amazonaws.com/STG/Test_BGI_Bhopal/BIST-F.jpg"
                     alt="Students sharing a moment together"
                     placeholderLabel="Alumni community"
                   />
@@ -118,7 +147,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                 </div>
                 <div className="hero-bento-tile hero-bento-right">
                   <ImageWithPlaceholder
-                    src="https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=600&auto=format&fit=crop&q=85"
+                    src="https://bansalgroup-assets.s3.ap-south-1.amazonaws.com/STG/Test_BGI_Bhopal/Picture19-1.jpg"
                     alt="Graduates celebrating together"
                     placeholderLabel="Alumni gathering"
                   />
@@ -126,7 +155,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                 </div>
                 <div className="hero-bento-tile hero-bento-bottom-a">
                   <ImageWithPlaceholder
-                    src="https://images.unsplash.com/photo-1509062522246-3755977927d7?w=500&auto=format&fit=crop&q=85"
+                    src="https://bansalgroup-assets.s3.ap-south-1.amazonaws.com/STG/Test_BGI_Bhopal/17.jpg"
                     alt="A classroom on campus"
                     placeholderLabel="Learning together"
                   />
@@ -134,7 +163,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                 </div>
                 <div className="hero-bento-tile hero-bento-bottom-b">
                   <ImageWithPlaceholder
-                    src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=500&auto=format&fit=crop&q=85"
+                    src="https://bansalgroup-assets.s3.ap-south-1.amazonaws.com/STG/Test_BGI_Bhopal/DSC01166Bansalotsav2024.webp"
                     alt="Friends and classmates together"
                     placeholderLabel="Student community"
                   />
@@ -156,15 +185,15 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
             <div>
               <div className="section-eyebrow">
                 <div className="section-eyebrow-line" />
-                Directory of Graduates
+                Verified Lifetime Members
               </div>
-              <h2 className="section-heading">Featured Alumni Profiles</h2>
+              <h2 className="section-heading">Featured BISTAA Members</h2>
               <p className="section-desc">
-                From civil engineering and software architecture to public administration — connect with verified Bansal graduates.
+                Verified lifetime members with professional details from leading organizations and companies.
               </p>
             </div>
-            <button className="btn btn-secondary btn-lg" onClick={() => setView('directory')}>
-              Open Full Directory <ArrowRight size={16} />
+            <button className="btn btn-secondary btn-lg" onClick={() => setView('active-members')}>
+              View All Members <ArrowRight size={16} />
             </button>
           </div>
 
@@ -175,7 +204,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                 type="text"
                 value={searchInput}
                 onChange={e => setSearchInput(e.target.value)}
-                placeholder="Search by name, organization, department, or year..."
+                placeholder="Search the full alumni directory by name, organization, or year..."
                 className="form-input"
               />
               <button type="submit" className="btn btn-primary">
@@ -185,7 +214,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
           </form>
 
           {/* Alumni Grid */}
-          <div className="alumni-grid-premium">
+          {dataLoadFailed && membersList.length === 0 ? <DataLoadNotice label="Verified BISTAA members" onRetry={onRetryData} loading={dataLoading} /> : <div className="alumni-grid-premium">
             {featuredAlumni.map((alumni, idx) => {
               const initials = `${alumni.firstname?.[0] || ''}${alumni.lastname?.[0] || ''}`.toUpperCase();
 
@@ -207,33 +236,33 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                     </div>
                     <div className="home-featured-card-heading">
                       <div className="alumni-card-name">{alumni.firstname} {alumni.lastname}</div>
-                      <div className="alumni-card-pos">{alumni.pos} at {alumni.connected_to}</div>
+                      <div className="alumni-card-pos">{alumni.pos ? `${alumni.pos} at ${alumni.connected_to}` : alumni.connected_to}</div>
                     </div>
                   </div>
                   <div className="alumni-card-body">
                     <div className="alumni-meta-row">
                       <MapPin size={14} className="alumni-meta-icon" />
-                      <span>{alumni.companyloc || alumni.companyloc_abroad || '—'}</span>
+                      <span>{alumni.companyloc || alumni.companyloc_abroad || 'Location not listed'}</span>
                     </div>
                     <div className="alumni-meta-row">
                       <BookOpen size={14} className="alumni-meta-icon" />
-                      <span>{alumni.course} · {alumni.college}</span>
+                      <span>{[alumni.course, alumni.college].filter(Boolean).join(' · ') || 'Bansal Institute of Science & Technology'}</span>
                     </div>
                     <div className="alumni-tags">
-                      <span className="tag-pill tag-batch">Class of {alumni.batch}</span>
-                      <span className="tag-pill tag-sector">{alumni.companysector}</span>
+                      {alumni.batch && <span className="tag-pill tag-batch">Batch of {alumni.batch}</span>}
+                      {alumni.companysector && <span className="tag-pill tag-sector">{alumni.companysector}</span>}
                       {alumni.is_bistaa_member && <span className="tag-pill tag-bistaa">Verified Member</span>}
                     </div>
                   </div>
                   <div className="home-featured-card-footer">
-                    <button className="home-featured-card-link" onClick={() => setView('directory')}>
-                      View in Directory <ArrowRight size={15} />
+                    <button className="home-featured-card-link" onClick={() => setView('active-members')}>
+                      View Members <ArrowRight size={15} />
                     </button>
                   </div>
                 </div>
               );
             })}
-          </div>
+          </div>}
         </div>
       </section>
 
@@ -249,17 +278,17 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
               <div className="section-eyebrow-line" />
             </div>
             <h2 className="section-heading">Why Join the Alumni Association?</h2>
-            <p className="section-desc" style={{ margin: '0 auto' }}>
-              Connect with our 25-year network of engineers, innovators, and leaders with verifiable graduate credentials.
+            <p className="section-desc home-benefits-intro">
+              Stay connected to BIST through alumni profiles, membership services, and association events.
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
+          <div className="home-benefits-grid">
             {[
-              { icon: 'badge', title: 'Official Digital Membership ID', desc: 'Permanent verifiable membership card with QR verification for campus entry, convocations, and institutional events.' },
-              { icon: 'handshake', title: 'Verified Graduate Directory', desc: 'Access contact channels and career pathways across 800+ active verified lifetime alumni.' },
-              { icon: 'event', title: 'Annual Homecoming Priority', desc: 'Reserved seating and formal invitation to annual alumni reunions, silver jubilee celebrations, and academic meets.' },
-              { icon: 'verified', title: 'AICTE / NAAC Credentialing', desc: 'All records are maintained in alignment with statutory higher education accreditation frameworks.' },
+              { icon: 'badge', title: 'Digital Membership Pass', desc: 'A scannable pass that displays membership details and can be checked against BISTAA records.' },
+              { icon: 'handshake', title: 'Verified Graduate Directory', desc: verifiedMemberCount ? `Explore professional profiles and career pathways from ${verifiedMemberCount.toLocaleString('en-IN')} verified BISTAA members.` : 'Explore professional profiles and career pathways from verified alumni.' },
+              { icon: 'event', title: 'Alumni Events', desc: 'Browse scheduled reunions, campus gatherings, and academic events, and RSVP when registration is available.' },
+              { icon: 'verified', title: 'Membership Review', desc: 'BISTAA administrators review membership applications before confirming a member’s status.' },
             ].map((f, i) => (
               <div key={i} style={{
                 background: '#ffffff',
@@ -322,7 +351,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
             </button>
           </div>
 
-          <div className="events-grid-premium">
+          {dataLoadFailed && upcomingEvents.length === 0 ? <DataLoadNotice label="Upcoming events" onRetry={onRetryData} loading={dataLoading} /> : <div className="events-grid-premium">
             {upcomingEvents.map((ev, i) => {
               const dateStr = ev.date || '';
               const [day, month] = dateStr.split(' ');
@@ -330,7 +359,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                 <div key={i} className="event-card-premium">
                   <div className="event-card-img">
                     <ImageWithPlaceholder
-                      src={ev.image || 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800'}
+                      src={ev.image}
                       alt={ev.title}
                       placeholderLabel={`${ev.title} photo`}
                     />
@@ -362,7 +391,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
                 </div>
               );
             })}
-          </div>
+          </div>}
         </div>
       </section>
 
@@ -390,7 +419,7 @@ export default function HomePage({ alumniList, eventsList, setView, onRsvpClick 
               Join the Bansal Alumni Network
             </h2>
             <p style={{ fontSize: '0.95rem', color: 'var(--text-body)', maxWidth: '580px', margin: '0 auto 2rem', lineHeight: 1.65 }}>
-              Connect with thousands of graduates worldwide, obtain your verified directory listing,
+              Connect with graduates worldwide, obtain your verified directory listing,
               and stay anchored to your alma mater.
             </p>
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>

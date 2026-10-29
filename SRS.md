@@ -1,6 +1,6 @@
 # Software Requirements Specification (SRS)
 
-> **Implementation status:** This document describes requirements and planned architecture; it is not a description of all currently implemented capabilities. The current repository is a frontend prototype with browser-local sample data. A backend API, database, authentication, payment processing, and email delivery are not currently included.
+> **Implementation status:** This document describes requirements and planned architecture; it is not a guarantee that every requirement is implemented. The repository now includes a React frontend and FastAPI service connected to the supplied MariaDB schema for core alumni, membership, event, gallery, and review workflows. External payment processing and email delivery are not included.
 
 ## BGI ALUMENTO: Modern Alumni Management System
 ### Modernized Engineering Specification for `bistalumni.in` (Bansal Group of Institutions)

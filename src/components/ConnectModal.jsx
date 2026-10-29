@@ -73,7 +73,7 @@ export default function ConnectModal({ alumnus, onClose, onSend }) {
           gap: '1rem'
         }}>
           <div><b>Degree:</b> {alumnus.college} • {alumnus.course}</div>
-          <div><b>Batch:</b> Class of {alumnus.batch}</div>
+          <div><b>Batch:</b> Batch of {alumnus.batch}</div>
           <div><b>Location:</b> {alumnus.companyloc}</div>
         </div>
 
@@ -86,7 +86,7 @@ export default function ConnectModal({ alumnus, onClose, onSend }) {
                 type="text"
                 className="form-input"
                 style={{ paddingLeft: '2.5rem' }}
-                placeholder="e.g. Amit Sharma (3rd Year CSE)"
+                placeholder="Enter your name and current study year"
                 required
                 value={senderName}
                 onChange={(e) => setSenderName(e.target.value)}

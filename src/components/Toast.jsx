@@ -5,9 +5,9 @@ export default function Toast({ toasts }) {
   if (!toasts || toasts.length === 0) return null;
 
   return (
-    <div className="toast-stack">
+    <div className="toast-stack" aria-live="polite" aria-atomic="false">
       {toasts.map((toast) => (
-        <div key={toast.id} className={`toast-item toast-${toast.type}`}>
+        <div key={toast.id} className={`toast-item toast-${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'}>
           {toast.type === 'success' ? (
             <CheckCircle2 size={18} style={{ color: 'var(--bgi-emerald)' }} />
           ) : (

@@ -1,23 +1,24 @@
-import React, { useEffect } from 'react';
-import { X, Printer, ShieldCheck, GraduationCap, CheckCircle } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import React, { useEffect, useState } from 'react';
+import { X, Printer, ShieldCheck, GraduationCap, CheckCircle, QrCode } from 'lucide-react';
 import ImageWithPlaceholder from './ImageWithPlaceholder';
 import { BGI_BHOPAL_LOGO } from '../brand';
+import { createMemberIdentityPayload, createMemberIdentityQr, QR_CREDIT } from '../utils/memberIdentityQr';
 
 export default function DigitalPassModal({ passData, onClose }) {
+  const [identityQr, setIdentityQr] = useState('');
+  const enrollment = String(passData?.enrollment || passData?.enroll_no || '').trim();
+  const officialMembershipId = String(passData?.membership_id || passData?.bistaa_id || '').trim();
+  const memberIdentifier = officialMembershipId || enrollment || (passData?.id ? `PROFILE-${passData.id}` : 'ID-UNAVAILABLE');
+  const qrPayload = createMemberIdentityPayload({ ...passData, membership_id: memberIdentifier });
+
   useEffect(() => {
+    let cancelled = false;
+    setIdentityQr('');
     if (passData) {
-      try {
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.6 }
-        });
-      } catch (e) {
-        // Safe fallback if canvas is unavailable
-      }
+      createMemberIdentityQr(qrPayload).then(dataUrl => { if (!cancelled) setIdentityQr(dataUrl); }).catch(() => {});
     }
-  }, [passData]);
+    return () => { cancelled = true; };
+  }, [passData, qrPayload]);
 
   const printCardOnly = async () => {
     const card = document.querySelector('.digital-pass-modal .digital-pass-print-card');
@@ -119,7 +120,7 @@ export default function DigitalPassModal({ passData, onClose }) {
             <div className="pass-crest-group digital-pass-brand">
               <div className="digital-pass-brand-mark">
                 <span aria-hidden="true"><GraduationCap size={22} /></span>
-                <img src={BGI_BHOPAL_LOGO} alt="BGI Bhopal" decoding="async" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                <img src={BGI_BHOPAL_LOGO} alt="BGI Bhopal" decoding="async" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
               </div>
               <div className="digital-pass-brand-copy">
                 <h4 style={{ color: '#003366', fontSize: '1.05rem', lineHeight: 1.2, fontFamily: 'var(--font-serif)' }}>Bansal Group of Institutions</h4>
@@ -154,7 +155,7 @@ export default function DigitalPassModal({ passData, onClose }) {
               <div>
                 <div className="pass-field-label" style={{ fontSize: '0.675rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Enrollment Number</div>
                 <div className="pass-field-val" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: '#0f172a' }}>
-                  {passData.enrollment}
+                  {enrollment || 'Not provided'}
                 </div>
               </div>
               <div>
@@ -166,22 +167,13 @@ export default function DigitalPassModal({ passData, onClose }) {
               <div>
                 <div className="pass-field-label" style={{ fontSize: '0.675rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Official Membership ID</div>
                 <div className="pass-field-val" style={{ color: '#003366', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                  {passData.membership_id || 'BISTAA-2026-ACTIVE'}
+                  {officialMembershipId || 'Verification pending'}
                 </div>
               </div>
             </div>
 
             <div className="pass-qr-box digital-pass-qr" style={{ textAlign: 'center' }}>
-              <ImageWithPlaceholder
-                src="assets/bistaa_qr.jpg"
-                alt="Verification QR code"
-                variant="compact"
-                placeholderLabel="Verification QR unavailable"
-                style={{ width: 72, height: 72, border: '1px solid #cbd5e1', borderRadius: '4px' }}
-              />
-              <span style={{ fontSize: '0.65rem', color: '#64748b', display: 'block', marginTop: '4px' }}>
-                Scan to Verify
-              </span>
+              {identityQr ? <img className="digital-pass-identity-qr" src={identityQr} alt={`Unique BISTAA identity QR for ${memberIdentifier}`} /> : <div className="digital-pass-qr-loading" role="status" aria-label="Generating member identity QR"><QrCode size={20} /></div>}
             </div>
           </div>
 
@@ -196,7 +188,7 @@ export default function DigitalPassModal({ passData, onClose }) {
             color: '#64748b'
           }}>
             <span>Issued by BISTAA Executive Council, Bhopal</span>
-            <span>Validity: LIFETIME ASSOCIATION MEMBER</span>
+            <span>{QR_CREDIT} · Lifetime member</span>
           </div>
         </div>
 
@@ -205,8 +197,8 @@ export default function DigitalPassModal({ passData, onClose }) {
           <button className="btn btn-secondary" onClick={onClose}>
             Close
           </button>
-          <button className="btn btn-primary" onClick={printCardOnly}>
-            <Printer size={16} /> Print / Download Card
+          <button className="btn btn-primary" onClick={printCardOnly} disabled={!identityQr}>
+            <Printer size={16} /> {identityQr ? 'Print / Download Card' : 'Preparing member QR…'}
           </button>
         </div>
       </div>

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import { 
   Search, 
   CheckCircle2, 
@@ -13,11 +12,15 @@ import {
   FileText
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { getBistaaStatus } from '../api';
+import { createMemberIdentityPayload, createMemberIdentityQr, QR_CREDIT } from '../utils/memberIdentityQr';
 
-export default function StatusPage({ bistaaApps, onOpenSlip, onOpenDigitalPass, setView, initialEnrollment = '' }) {
+export default function StatusPage({ onOpenSlip, onOpenDigitalPass, setView, initialEnrollment = '' }) {
   const [queryInput, setQueryInput] = useState(initialEnrollment);
   const [searchedRecord, setSearchedRecord] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [memberIdentityQr, setMemberIdentityQr] = useState('');
 
   useEffect(() => {
     if (initialEnrollment) {
@@ -25,21 +28,35 @@ export default function StatusPage({ bistaaApps, onOpenSlip, onOpenDigitalPass, 
     }
   }, [initialEnrollment]);
 
-  const handleSearch = (term) => {
+  useEffect(() => {
+    let cancelled = false;
+    setMemberIdentityQr('');
+    if (searchedRecord?.status === 'ACTIVE') {
+      createMemberIdentityQr(createMemberIdentityPayload({
+        ...searchedRecord,
+        name: searchedRecord.name || [searchedRecord.firstname, searchedRecord.lastname].filter(Boolean).join(' '),
+      })).then(dataUrl => { if (!cancelled) setMemberIdentityQr(dataUrl); }).catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [searchedRecord]);
+
+  const handleSearch = async (term) => {
     const q = (term || queryInput).trim().toUpperCase();
     if (!q) return;
 
     setHasSearched(true);
-    const match = bistaaApps.find(
-      app => app.enrollment.toUpperCase() === q || app.upi_transaction_id === q
-    );
-
-    setSearchedRecord(match || null);
-
-    if (match && match.status === 'ACTIVE') {
+    setSearchError('');
+    setSearchedRecord(null);
+    try {
+      const match = await getBistaaStatus(q);
+      setSearchedRecord(match);
+      if (match.status === 'ACTIVE') {
       try {
         confetti({ particleCount: 40, spread: 60, origin: { y: 0.6 } });
       } catch (e) {}
+      }
+    } catch (error) {
+      if (error.status !== 404) setSearchError(error.message || 'Status could not be checked.');
     }
   };
 
@@ -80,7 +97,7 @@ export default function StatusPage({ bistaaApps, onOpenSlip, onOpenDigitalPass, 
                 type="text"
                 className="form-input"
                 style={{ paddingLeft: '2.75rem', fontFamily: 'var(--font-mono)', fontSize: '1rem', height: 48 }}
-                placeholder="Enter Enrollment No (e.g. 0112CS151042) or 12-digit UTR..."
+                placeholder="Enter your enrollment number or 12-digit UTR..."
                 value={queryInput}
                 onChange={(e) => setQueryInput(e.target.value)}
               />
@@ -90,28 +107,6 @@ export default function StatusPage({ bistaaApps, onOpenSlip, onOpenDigitalPass, 
             </button>
           </form>
 
-          {/* Quick Click Samples */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
-            <span>Try sample applications:</span>
-            {[
-              { id: '0112CS151042', label: '0112CS151042 (Active)' },
-              { id: '0112IT211064', label: '0112IT211064 (Pending)' },
-              { id: '0112ME191022', label: '0112ME191022 (Rejected)' }
-            ].map(item => (
-              <button
-                key={item.id}
-                type="button"
-                className="tag-chip tag-batch"
-                style={{ cursor: 'pointer', fontFamily: 'var(--font-mono)' }}
-                onClick={() => {
-                  setQueryInput(item.id);
-                  handleSearch(item.id);
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Results Container */}
@@ -137,8 +132,7 @@ export default function StatusPage({ bistaaApps, onOpenSlip, onOpenDigitalPass, 
                   No Application Found
                 </h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', maxWidth: 460, margin: '0 auto 1.5rem' }}>
-                  No BISTAA membership record found matching "<b>{queryInput}</b>". 
-                  Please check the enrollment number spelling, or submit the ₹300 BISTAA registration form.
+                  {searchError || <>No BISTAA membership record found matching "<b>{queryInput}</b>". Please check the enrollment number spelling, or submit the ₹300 BISTAA registration form.</>}
                 </p>
                 <button className="btn btn-gold btn-sm" onClick={() => setView('bistaa')}>
                   Submit BISTAA Registration (₹300)
@@ -397,22 +391,13 @@ export default function StatusPage({ bistaaApps, onOpenSlip, onOpenDigitalPass, 
                         </div>
 
                         <div className="pass-qr-box" style={{ textAlign: 'center' }}>
-                          <ImageWithPlaceholder
-                            src="assets/bistaa_qr.jpg"
-                            alt="BISTAA verification QR code"
-                            variant="compact"
-                            placeholderLabel="Verification QR unavailable"
-                            style={{ width: 72, height: 72, border: '1px solid #cbd5e1', borderRadius: '4px' }}
-                          />
-                          <span style={{ fontSize: '0.65rem', color: '#64748b', display: 'block', marginTop: '4px' }}>
-                            Scan to Verify
-                          </span>
+                          {memberIdentityQr ? <img src={memberIdentityQr} alt={`Unique identity QR for ${searchedRecord.membership_id}`} style={{ display: 'block', boxSizing: 'border-box', width: 128, height: 128, minWidth: 128, aspectRatio: '1 / 1', objectFit: 'contain', border: '1px solid #cbd5e1', borderRadius: '6px', imageRendering: 'pixelated' }} /> : <div style={{ boxSizing: 'border-box', width: 128, height: 128, minWidth: 128, aspectRatio: '1 / 1', display: 'grid', placeItems: 'center', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#64748b', fontSize: 10 }}>Preparing QR…</div>}
                         </div>
                       </div>
 
                       <div style={{ marginTop: '1.25rem', paddingTop: '0.75rem', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.725rem', color: '#64748b' }}>
                         <span>Issued by BISTAA Executive Council, Bhopal</span>
-                        <span>Validity: LIFETIME ASSOCIATION MEMBER</span>
+                        <span>{QR_CREDIT} · Lifetime member</span>
                       </div>
                     </div>
                   </div>

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import ImageWithPlaceholder from './ImageWithPlaceholder';
+import React, { useEffect, useState } from 'react';
 import { X, Ticket, Calendar, MapPin, CheckCircle2, QrCode } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { createMemberIdentityQr } from '../utils/memberIdentityQr';
 
 export default function RsvpModal({ event, onClose, onConfirm }) {
   const [alumniName, setAlumniName] = useState('');
@@ -9,26 +9,52 @@ export default function RsvpModal({ event, onClose, onConfirm }) {
   const [email, setEmail] = useState('');
   const [guests, setGuests] = useState('1');
   const [confirmedPass, setConfirmedPass] = useState(null);
+  const [passQr, setPassQr] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+
+  useEffect(() => {
+    if (!confirmedPass?.passId) { setPassQr(''); return undefined; }
+    let cancelled = false;
+    const payload = [
+      'BGI OFFICIAL EVENT ENTRY PASS',
+      `Pass code: ${confirmedPass.passId}`,
+      `Attendee: ${confirmedPass.alumniName || ''}`,
+      `Enrollment: ${confirmedPass.enrollment || ''}`,
+      `Event: ${confirmedPass.eventTitle || ''}`,
+    ].join('\n');
+    createMemberIdentityQr(payload).then(qr => { if (!cancelled) setPassQr(qr); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [confirmedPass]);
 
   if (!event) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const pass = {
-      passId: `BGI-PASS-${Math.floor(100000 + Math.random() * 900000)}`,
-      alumniName,
-      enrollment,
-      email,
-      guests,
-      eventTitle: event.title,
-      eventDate: event.date,
-      venue: event.venue
-    };
-    setConfirmedPass(pass);
-    onConfirm(event.title);
+    setIsSubmitting(true);
+    setSubmitError('');
     try {
+      const response = await onConfirm({
+        attendee_name: alumniName.trim(),
+        enrollment_number: enrollment.trim(),
+        email: email.trim(),
+        guest_count: Number(guests),
+      });
+      setConfirmedPass({
+        ...response,
+        alumniName: response.attendee_name,
+        enrollment: response.enrollment_number,
+        guests: String(response.guest_count),
+        eventTitle: event.title,
+        eventDate: event.date,
+        venue: event.venue,
+      });
       confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-    } catch (e) {}
+    } catch (error) {
+      setSubmitError(error.message || 'Your RSVP could not be saved. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const printPassOnly = () => {
@@ -104,7 +130,7 @@ export default function RsvpModal({ event, onClose, onConfirm }) {
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g. 0112CS151042"
+                placeholder="Enter your enrollment number"
                   style={{ fontFamily: 'var(--font-mono)' }}
                   required
                   value={enrollment}
@@ -138,8 +164,10 @@ export default function RsvpModal({ event, onClose, onConfirm }) {
                 </select>
               </div>
 
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>
-                <CheckCircle2 size={16} /> Confirm Attendance &amp; Generate Gate Pass
+              {submitError && <p className="admin-login-error" role="alert">{submitError}</p>}
+
+              <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ width: '100%', marginTop: '0.5rem' }}>
+                <CheckCircle2 size={16} /> {isSubmitting ? 'Saving your RSVP…' : 'Confirm Attendance & Generate Gate Pass'}
               </button>
             </form>
           </>
@@ -159,11 +187,12 @@ export default function RsvpModal({ event, onClose, onConfirm }) {
               <CheckCircle2 size={32} />
             </div>
 
+            <span className="rsvp-success-label"><CheckCircle2 size={14} /> RSVP CONFIRMED</span>
             <h3 style={{ fontSize: '1.35rem', color: 'var(--bgi-navy-900)', marginBottom: '0.35rem' }}>
-              Attendance Confirmed!
+              You’re on the guest list!
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-              Your digital entry QR pass has been generated and sent to <b>{confirmedPass.email}</b>.
+              Your RSVP for <b>{confirmedPass.eventTitle}</b> is confirmed. Your digital gate pass is ready for <b>{confirmedPass.email}</b>—keep it handy at check-in.
             </p>
 
             {/* Entry Gate Pass Visual */}
@@ -183,13 +212,7 @@ export default function RsvpModal({ event, onClose, onConfirm }) {
                   <h4 style={{ color: '#003366', fontSize: '1.05rem', fontFamily: 'var(--font-serif)', marginTop: '2px' }}>{confirmedPass.eventTitle}</h4>
                 </div>
                 <div style={{ background: '#ffffff', padding: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
-                  <ImageWithPlaceholder
-                    src="assets/bistaa_qr.jpg"
-                    alt="Check-in QR code"
-                    variant="compact"
-                    placeholderLabel="QR unavailable"
-                    style={{ width: 44, height: 44, display: 'block' }}
-                  />
+                  {passQr ? <img src={passQr} alt="Unique event entry pass QR code" width="44" height="44" style={{ width: 44, height: 44, display: 'block' }} /> : <QrCode size={36} aria-label="Generating event pass QR" />}
                 </div>
               </div>
 

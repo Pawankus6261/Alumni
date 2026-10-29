@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
+import DataLoadNotice from '../components/DataLoadNotice';
+import Pagination from '../components/Pagination';
 import { 
   Search, 
   Building, 
@@ -19,7 +21,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 
-export default function DirectoryPage({ alumniList }) {
+export default function DirectoryPage({ alumniList, dataLoadFailed, dataLoading, onRetryData }) {
   const [activeSector, setActiveSector] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCollege, setSelectedCollege] = useState('ALL');
@@ -27,6 +29,8 @@ export default function DirectoryPage({ alumniList }) {
   const [selectedBranch, setSelectedBranch] = useState('ALL');
   const [selectedLocation, setSelectedLocation] = useState('ALL');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
+  const [page, setPage] = useState(1);
+  const pageSize = 12;
 
   const sectors = [
     { id: 'All', label: 'All Sectors', icon: LayoutGrid },
@@ -35,6 +39,7 @@ export default function DirectoryPage({ alumniList }) {
     { id: 'Private', label: 'Private Sector', icon: Building2 },
     { id: 'Self Employed', label: 'Entrepreneurs & Startups', icon: Lightbulb },
   ];
+  const batchOptions = [...new Set(alumniList.map(alumnus => Number(alumnus.batch)).filter(batch => Number.isInteger(batch) && batch >= 1980 && batch <= new Date().getFullYear()))].sort((a, b) => b - a);
 
   // Filter computation
   const filteredAlumni = useMemo(() => {
@@ -72,6 +77,11 @@ export default function DirectoryPage({ alumniList }) {
     });
   }, [alumniList, activeSector, selectedCollege, selectedBatch, selectedBranch, selectedLocation, searchQuery]);
 
+  useEffect(() => setPage(1), [filteredAlumni, viewMode]);
+  const pageCount = Math.max(1, Math.ceil(filteredAlumni.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageAlumni = filteredAlumni.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   const resetFilters = () => {
     setActiveSector('All');
     setSearchQuery('');
@@ -93,7 +103,7 @@ export default function DirectoryPage({ alumniList }) {
           </div>
           <h1 className="page-hero-title">Alumni Directory &amp; Industry Network</h1>
           <p className="page-hero-desc">
-            Discover and connect with thousands of verified Bansal graduates categorized by
+            Discover and connect with verified Bansal graduates categorized by
             professional sector, constituent college, and graduation batch.
           </p>
 
@@ -167,8 +177,8 @@ export default function DirectoryPage({ alumniList }) {
                   value={selectedBatch}
                   onChange={(e) => setSelectedBatch(e.target.value)}
                 >
-                  <option value="ALL">All Batches (2005 - 2024)</option>
-                  {[2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015, 2014, 2013, 2012, 2011, 2010, 2009, 2008, 2007].map(b => (
+                  <option value="ALL">All Batches</option>
+                  {batchOptions.map(b => (
                     <option key={b} value={b}>Batch of {b}</option>
                   ))}
                 </select>
@@ -278,8 +288,10 @@ export default function DirectoryPage({ alumniList }) {
             </div>
           </div>
 
+        {filteredAlumni.length > pageSize && <Pagination page={currentPage} pageSize={pageSize} total={filteredAlumni.length} onPageChange={setPage} label="alumni" />}
+
         {/* Empty State */}
-        {filteredAlumni.length === 0 && (
+        {dataLoadFailed && alumniList.length === 0 ? <DataLoadNotice label="Alumni directory" onRetry={onRetryData} loading={dataLoading} /> : filteredAlumni.length === 0 && (
           <div style={{
             background: '#ffffff',
             border: '1px solid var(--border-card)',
@@ -316,7 +328,7 @@ export default function DirectoryPage({ alumniList }) {
         {/* View Mode 1: Grid Cards */}
         {viewMode === 'grid' && filteredAlumni.length > 0 && (
           <div className="alumni-grid">
-            {filteredAlumni.map(alumnus => (
+            {pageAlumni.map(alumnus => (
               <div key={alumnus.id} className="alumnus-card">
                 <div>
                   <div className="alumnus-card-header">
@@ -358,7 +370,7 @@ export default function DirectoryPage({ alumniList }) {
                     </div>
 
                     <div className="alumni-tags-row">
-                      <span className="tag-chip tag-batch">Class of {alumnus.batch}</span>
+                      <span className="tag-chip tag-batch">Batch of {alumnus.batch}</span>
                       <span className="tag-chip tag-sector">{alumnus.companysector}</span>
                       {alumnus.is_bistaa_member && (
                         <span className="tag-chip tag-active-bistaa">
@@ -390,7 +402,7 @@ export default function DirectoryPage({ alumniList }) {
                 </tr>
               </thead>
               <tbody>
-                {filteredAlumni.map(a => (
+                {pageAlumni.map(a => (
                   <tr key={a.id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
@@ -425,7 +437,7 @@ export default function DirectoryPage({ alumniList }) {
                     <td style={{ fontWeight: 600, color: 'var(--bgi-blue-accent)' }}>{a.connected_to}</td>
                     <td>{a.pos}</td>
                     <td>{a.college} - {a.course}</td>
-                    <td>Class of {a.batch}</td>
+                    <td>Batch of {a.batch}</td>
                     <td><span className="tag-chip tag-sector">{a.companysector}</span></td>
                     <td>{a.country_flag || '📍'} {a.companyloc}</td>
                   </tr>
@@ -434,6 +446,8 @@ export default function DirectoryPage({ alumniList }) {
             </table>
           </div>
         )}
+
+        {filteredAlumni.length > 0 && <Pagination page={currentPage} pageSize={pageSize} total={filteredAlumni.length} onPageChange={setPage} label="alumni" />}
 
       </div>
     </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ImageUploadField from '../components/ImageUploadField';
+import SubmissionSuccessModal from '../components/SubmissionSuccessModal';
 import { 
   UserPlus, 
   CheckCircle2, 
@@ -43,20 +44,19 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
   });
 
   const [avatarPreview, setAvatarPreview] = useState(null);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submission, setSubmission] = useState(null);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     const cleanEnroll = formData.enroll_no.trim().toUpperCase();
-    if (!cleanEnroll) {
-      showToast('Enrollment Number is required', 'error');
-      return;
-    }
 
     const newAlumnus = {
       id: `alum-${Date.now()}`,
@@ -73,17 +73,18 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
       bistaa_id: null
     };
 
-    onAddAlumnus(newAlumnus);
-
+    setIsSubmitting(true);
     try {
-      confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-    } catch (e) {}
-
-    showToast('Registration successful! Welcome to the BGI Alumni Network.', 'success');
-    
-    setTimeout(() => {
-      setView('directory');
-    }, 1200);
+      const result = await onAddAlumnus(newAlumnus, avatarFile);
+      try {
+        confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+      } catch (e) {}
+      setSubmission({ name: `${formData.firstname} ${formData.lastname}`.trim(), reference: result?.id || '' });
+    } catch (error) {
+      showToast(error.message || 'Registration could not be saved. Please try again.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -91,7 +92,7 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
       
       {/* Premium Hero Band */}
       <div className="page-hero-band">
-        <div className="container" style={{ maxWidth: 880 }}>
+        <div className="container" style={{ maxWidth: 980 }}>
           <div className="page-hero-eyebrow">
             <span className="material-symbols-outlined" style={{ fontSize: 14 }}>person_add</span>
             Join the Verified Global Alumni Directory
@@ -99,7 +100,7 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
           <h1 className="page-hero-title">Standard Alumni Registration</h1>
           <p className="page-hero-desc">
             Register your graduation credentials with the Bansal Group of Institutions Alumni Database. 
-            Connect with thousands of graduates worldwide and add your verified profile to the alumni directory.
+            Connect with fellow graduates worldwide and add your verified profile to the alumni directory.
           </p>
         </div>
       </div>
@@ -112,9 +113,7 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
           <form className="registration-form" onSubmit={handleSubmit}>
 
             {/* Section 1: Personal Details */}
-            <h3 style={{ fontSize: '1.2rem', color: 'var(--bgi-navy-900)', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem', marginBottom: '1.25rem' }}>
-              1. Personal Information
-            </h3>
+            <h3 className="registration-section-title"><span>01</span> Personal Information</h3>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
               <div className="form-group">
@@ -123,7 +122,7 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
                   type="text"
                   name="firstname"
                   className="form-input"
-                  placeholder="e.g. Yash"
+                  placeholder="Your first name"
                   required
                   value={formData.firstname}
                   onChange={handleChange}
@@ -136,7 +135,7 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
                   type="text"
                   name="lastname"
                   className="form-input"
-                  placeholder="e.g. Agrawal"
+                  placeholder="Your last name"
                   required
                   value={formData.lastname}
                   onChange={handleChange}
@@ -178,20 +177,18 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
             </div>
 
             {/* Section 2: Academic Details */}
-            <h3 style={{ fontSize: '1.2rem', color: 'var(--bgi-navy-900)', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem', margin: '2rem 0 1.25rem' }}>
-              2. Academic Credentials
-            </h3>
+            <h3 className="registration-section-title"><span>02</span> Academic Credentials</h3>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
               <div className="form-group">
-                <label className="form-label">Enrollment Number <span className="req">*</span></label>
+                <label className="form-label" htmlFor="registration-enrollment">Enrollment Number</label>
                 <input
                   type="text"
+                  id="registration-enrollment"
                   name="enroll_no"
                   className="form-input"
-                  placeholder="e.g. 0112CS181045"
+                  placeholder="Enter your enrollment number"
                   style={{ fontFamily: 'var(--font-mono)' }}
-                  required
                   value={formData.enroll_no}
                   onChange={handleChange}
                 />
@@ -200,7 +197,7 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
               <div className="form-group">
                 <label className="form-label">Passout Batch (Year) <span className="req">*</span></label>
                 <select name="batch" className="select-field" value={formData.batch} onChange={handleChange}>
-                  {[2025,2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015, 2014, 2013, 2012, 2011, 2010, 2009, 2008, 2007, 2006, 2005].map(y => (
+                  {Array.from({ length: new Date().getFullYear() - 1980 + 1 }, (_, index) => new Date().getFullYear() - index).map(y => (
                     <option key={y} value={y}>{y}</option>
                   ))}
                 </select>
@@ -233,9 +230,7 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
             </div>
 
             {/* Section 3: Professional Employment */}
-            <h3 style={{ fontSize: '1.2rem', color: 'var(--bgi-navy-900)', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem', margin: '2rem 0 1.25rem' }}>
-              3. Current Professional Employment
-            </h3>
+            <h3 className="registration-section-title"><span>03</span> Current Professional Employment</h3>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
               <div className="form-group">
@@ -299,9 +294,7 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
             </div>
 
             {/* Section 4: Contact & Socials */}
-            <h3 style={{ fontSize: '1.2rem', color: 'var(--bgi-navy-900)', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem', margin: '2rem 0 1.25rem' }}>
-              4. Contact &amp; Professional Socials
-            </h3>
+            <h3 className="registration-section-title"><span>04</span> Contact &amp; Professional Socials</h3>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
               <div className="form-group">
@@ -364,8 +357,8 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
                 variant="profile"
                 title="Profile photo"
                 description="JPG, PNG or WebP · Up to 5 MB · Optional"
-                onChange={({ preview }) => setAvatarPreview(preview)}
-                onRemove={() => setAvatarPreview(null)}
+                onChange={({ file, preview }) => { setAvatarFile(file); setAvatarPreview(preview); }}
+                onRemove={() => { setAvatarFile(null); setAvatarPreview(null); }}
                 onError={(message) => showToast(message, 'error')}
               />
             </div>
@@ -375,9 +368,10 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
               <button 
                 type="submit" 
                 className="btn btn-primary btn-lg" 
+                disabled={isSubmitting}
                 style={{ width: '100%' }}
               >
-                <UserPlus size={18} /> Complete Registration &amp; Join Directory
+                <UserPlus size={18} /> {isSubmitting ? 'Submitting your profile…' : 'Complete Registration & Join Directory'}
               </button>
             </div>
 
@@ -386,6 +380,14 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
 
         </div>
       </div>
+      {submission && <SubmissionSuccessModal
+        eyebrow="PROFILE SUBMITTED"
+        title={`Thanks, ${submission.name.split(' ')[0]}!`}
+        message="Your alumni profile has been received and is awaiting institutional verification. It will appear in the directory once approved."
+        reference={submission.reference}
+        actionLabel="Explore the directory"
+        onAction={() => setView('directory')}
+      />}
     </div>
   );
 }

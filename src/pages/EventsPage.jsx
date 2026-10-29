@@ -1,5 +1,6 @@
 import React from 'react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
+import DataLoadNotice from '../components/DataLoadNotice';
 import { 
   MapPin, 
   Users, 
@@ -9,7 +10,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 
-export default function EventsPage({ eventsList, onRsvpClick, setView }) {
+export default function EventsPage({ eventsList, onRsvpClick, setView, dataLoadFailed, dataLoading, onRetryData }) {
   return (
     <div style={{ minHeight: '80vh' }}>
       
@@ -29,7 +30,7 @@ export default function EventsPage({ eventsList, onRsvpClick, setView }) {
           <div style={{ display: 'flex', gap: '2rem', marginTop: '2rem', flexWrap: 'wrap' }}>
             <div style={{ borderLeft: '2px solid var(--gold-500)', paddingLeft: '1rem' }}>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.75rem', fontWeight: 700, color: 'var(--color-secondary-hover)' }}>
-                {eventsList.length}+
+                {dataLoadFailed && eventsList.length === 0 ? '—' : `${eventsList.length}+`}
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--color-neutral)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                 Scheduled Convocations &amp; Panels
@@ -51,7 +52,7 @@ export default function EventsPage({ eventsList, onRsvpClick, setView }) {
         <div className="container">
 
           {/* Events Grid */}
-          <div className="events-grid-premium">
+          {dataLoadFailed && eventsList.length === 0 ? <DataLoadNotice label="Events" onRetry={onRetryData} loading={dataLoading} /> : <div className="events-grid-premium">
             {eventsList.map(event => {
               const dateParts = event.date.match(/([A-Za-z]+)\s+(\d{1,2})/);
               const eventMonth = dateParts?.[1]?.slice(0, 3).toUpperCase() || 'DATE';
@@ -147,7 +148,7 @@ export default function EventsPage({ eventsList, onRsvpClick, setView }) {
               </div>
               );
             })}
-          </div>
+          </div>}
 
           {/* Nostalgia Gallery Teaser */}
           <div style={{
@@ -173,8 +174,7 @@ export default function EventsPage({ eventsList, onRsvpClick, setView }) {
                 Relive Moments from Convocations &amp; Grand Reunions
               </h3>
               <p style={{ color: 'var(--text-body)', fontSize: '0.95rem', maxWidth: 600, lineHeight: 1.6 }}>
-                Explore thousands of archived photographs spanning 25 years of engineering batches,
-                annual festivals, award galas, and landmark milestones at Bansal College Bhopal.
+                Explore event and campus photographs shared by the Bansal alumni community.
               </p>
             </div>
             <button className="btn-solid-navy" onClick={() => setView('gallery')}>
