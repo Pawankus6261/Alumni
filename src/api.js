@@ -183,15 +183,51 @@ export const updateAdminAlumnusPhoto = (id, { photo_url = '', file } = {}) => {
 export const reviewAdminApplication = (id, payload) => apiRequest(`/admin/applications/${id}/review`, {
   method: 'POST', body: JSON.stringify(payload),
 });
-export const createAdminEvent = (payload) => apiRequest('/admin/events', { method: 'POST', body: JSON.stringify(payload) });
-export const updateAdminEvent = (id, payload) => apiRequest(`/admin/events/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-export const deleteAdminEvent = (id) => apiRequest(`/admin/events/${id}`, { method: 'DELETE' });
-export const createAdminGalleryItem = (form) => apiRequest('/admin/gallery', { method: 'POST', body: form });
-export const updateAdminGalleryItem = (id, payload) => apiRequest(`/admin/gallery/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-export const deleteAdminGalleryItem = (id) => apiRequest(`/admin/gallery/${id}`, { method: 'DELETE' });
-export const createDepartment = (payload) => apiRequest('/admin/departments', { method: 'POST', body: JSON.stringify(payload) });
-export const updateDepartment = (id, payload) => apiRequest(`/admin/departments/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-export const deleteDepartment = (id) => apiRequest(`/admin/departments/${id}`, { method: 'DELETE' });
+export const createAdminEvent = async (payload) => {
+  const res = await apiRequest('/admin/events', { method: 'POST', body: JSON.stringify(payload) });
+  clearPublicDataCache();
+  return res;
+};
+export const updateAdminEvent = async (id, payload) => {
+  const res = await apiRequest(`/admin/events/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  clearPublicDataCache();
+  return res;
+};
+export const deleteAdminEvent = async (id) => {
+  const res = await apiRequest(`/admin/events/${id}`, { method: 'DELETE' });
+  clearPublicDataCache();
+  return res;
+};
+export const createAdminGalleryItem = async (form) => {
+  const res = await apiRequest('/admin/gallery', { method: 'POST', body: form });
+  clearPublicDataCache();
+  return res;
+};
+export const updateAdminGalleryItem = async (id, payload) => {
+  const res = await apiRequest(`/admin/gallery/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  clearPublicDataCache();
+  return res;
+};
+export const deleteAdminGalleryItem = async (id) => {
+  const res = await apiRequest(`/admin/gallery/${id}`, { method: 'DELETE' });
+  clearPublicDataCache();
+  return res;
+};
+export const createDepartment = async (payload) => {
+  const res = await apiRequest('/admin/departments', { method: 'POST', body: JSON.stringify(payload) });
+  clearPublicDataCache();
+  return res;
+};
+export const updateDepartment = async (id, payload) => {
+  const res = await apiRequest(`/admin/departments/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  clearPublicDataCache();
+  return res;
+};
+export const deleteDepartment = async (id) => {
+  const res = await apiRequest(`/admin/departments/${id}`, { method: 'DELETE' });
+  clearPublicDataCache();
+  return res;
+};
 export const deleteAdminRsvp = (id) => apiRequest(`/admin/rsvps/${id}`, { method: 'DELETE' });
 export const getAdminAccounts = () => apiRequest('/admin/accounts');
 export const createAdminAccount = (payload) => apiRequest('/admin/accounts', { method: 'POST', body: JSON.stringify(payload) });

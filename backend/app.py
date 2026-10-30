@@ -103,6 +103,7 @@ class AdminEventRequest(BaseModel):
     description: str = Field(default="", max_length=5000)
     schedule: str = Field(min_length=10, max_length=40)
     banner: str = Field(default="", max_length=1000)
+    registration_open: bool = True
 
 
 class AdminCourseRequest(BaseModel):
@@ -134,11 +135,11 @@ class GalleryUpdateRequest(BaseModel):
 
 class AdminAlumniUpdate(BaseModel):
     firstname: str = Field(min_length=1, max_length=100)
-    lastname: str = Field(min_length=1, max_length=100)
-    college: str = Field(min_length=1, max_length=100)
+    lastname: str = Field(default="", max_length=100)
+    college: str = Field(default="BIST", max_length=100)
     batch: int = Field(ge=1980, le=2100)
     course_id: int = Field(ge=1)
-    email: str = Field(min_length=5, max_length=250)
+    email: str = Field(default="", max_length=250)
     pos: str = Field(default="", max_length=200)
     connected_to: str = Field(default="", max_length=250)
     companyloc: str = Field(default="", max_length=200)
@@ -269,15 +270,19 @@ def ensure_backend_tables() -> None:
         if engine.dialect.name == "sqlite":
             admin_columns = {row["name"] for row in connection.execute(text("PRAGMA table_info(api_admins)")).mappings()}
             gallery_columns = {row["name"] for row in connection.execute(text("PRAGMA table_info(managed_gallery)")).mappings()}
+            event_columns = {row["name"] for row in connection.execute(text("PRAGMA table_info(events)")).mappings()}
         else:
             admin_columns = {row["Field"] for row in connection.execute(text("SHOW COLUMNS FROM api_admins")).mappings()}
             gallery_columns = {row["Field"] for row in connection.execute(text("SHOW COLUMNS FROM managed_gallery")).mappings()}
+            event_columns = {row["Field"] for row in connection.execute(text("SHOW COLUMNS FROM events")).mappings()}
         if "role" not in admin_columns:
             connection.execute(text("ALTER TABLE api_admins ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'super_admin'"))
         if "sort_order" not in gallery_columns:
             connection.execute(text("ALTER TABLE managed_gallery ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
         if "featured" not in gallery_columns:
             connection.execute(text("ALTER TABLE managed_gallery ADD COLUMN featured INTEGER NOT NULL DEFAULT 0"))
+        if "registration_open" not in event_columns:
+            connection.execute(text("ALTER TABLE events ADD COLUMN registration_open INTEGER NOT NULL DEFAULT 1"))
 
         username = os.getenv("BOOTSTRAP_ADMIN_USERNAME", "").strip()
         password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
@@ -390,8 +395,8 @@ def profile_image_url(value: Any) -> str | None:
 
 
 def alumni_payload(row: dict[str, Any], member_ids: dict[str, str] | None = None, details: dict[str, Any] | None = None) -> dict[str, Any]:
-    enrollment = str(row.get("enroll_no") or "")
-    member_id = (member_ids or {}).get(enrollment.upper())
+    enrollment = str(row.get("enroll_no") or "").strip()
+    member_id = (member_ids or {}).get(enrollment.upper()) if enrollment else None
     avatar = profile_image_url(row.get("avatar")) or ""
     location_type = str(row.get("comploc") or "")
     extras = details or {}
@@ -430,7 +435,7 @@ def get_alumni_rows(connection) -> list[dict[str, Any]]:
         LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
         WHERE a.status = 1 ORDER BY a.lastname, a.firstname""")).mappings().all()
     active = connection.execute(text("SELECT enrollment_number, alumni_registration_number FROM vista_active_members")).mappings().all()
-    member_ids = {str(row["enrollment_number"]).upper(): row["alumni_registration_number"] for row in active}
+    member_ids = {str(row["enrollment_number"]).strip().upper(): row["alumni_registration_number"] for row in active if str(row.get("enrollment_number") or "").strip()}
     return [alumni_payload({**dict(row), "course": row.get("course_name")}, member_ids,
         {"native_state": row.get("registration_native_state"), "bio": row.get("registration_bio")}) for row in rows]
 
@@ -586,15 +591,19 @@ def list_courses():
 def list_events():
     with engine.connect() as connection:
         rows = connection.execute(text("""SELECT e.id, e.title, e.content, e.schedule, e.banner,
+          COALESCE(e.registration_open, 1) AS registration_open,
           (SELECT COUNT(*) FROM event_rsvps r WHERE r.event_id=e.id) AS rsvp_count
           FROM events e ORDER BY e.schedule""")).mappings().all()
     result = []
+    now = datetime.now()
     for row in rows:
         scheduled = row["schedule"]
         if isinstance(scheduled, str):
             scheduled = datetime.fromisoformat(scheduled)
         if isinstance(scheduled, date) and not isinstance(scheduled, datetime):
             scheduled = datetime.combine(scheduled, datetime.min.time())
+        is_past = scheduled < now
+        reg_open = bool(row.get("registration_open", 1))
         result.append({
             "id": str(row["id"]), "title": row["title"], "description": row.get("content") or "",
             "subtitle": "Official BGI Alumni Gathering", "date": scheduled.strftime("%A, %B %d, %Y"),
@@ -602,6 +611,9 @@ def list_events():
             "venue": "Bansal Institute of Science & Technology, Bhopal",
             "image": row.get("banner") or None, "capacity": 0, "registered": int(row.get("rsvp_count") or 0),
             "category": "Campus Reunion", "highlights": [],
+            "registration_open": reg_open,
+            "is_past": is_past,
+            "can_rsvp": reg_open and not is_past,
         })
     return result
 
@@ -704,17 +716,30 @@ def find_application(query: str) -> dict[str, Any] | None:
           WHERE UPPER(enrollment_number)=:term OR UPPER(upi_transaction_id)=:term
           ORDER BY submitted_at DESC, id DESC LIMIT 1"""), {"term": term}).mappings().first()
         if row:
-            return safe_application(connection, dict(row))
-        active = connection.execute(text("""SELECT v.*, a.college, a.course_id, a.batch FROM vista_active_members v
-          LEFT JOIN alumnus_bio a ON UPPER(a.enroll_no)=UPPER(v.enrollment_number)
-          WHERE UPPER(v.enrollment_number)=:term"""), {"term": term}).mappings().first()
+            app = safe_application(connection, dict(row))
+            alum = connection.execute(text("SELECT avatar FROM alumnus_bio WHERE UPPER(enroll_no)=:term"), {"term": app["enrollment"].upper()}).mappings().first()
+            if alum and alum.get("avatar"):
+                url = profile_image_url(alum["avatar"])
+                app["photo_url"] = url
+                app["avatar"] = url
+                app["img_url"] = url
+            return app
+        active = connection.execute(text("""SELECT v.*, a.college, a.course_id, a.batch, a.avatar FROM vista_active_members v
+          LEFT JOIN alumnus_bio a ON a.id = (
+              SELECT a2.id FROM alumnus_bio a2
+              WHERE a2.enroll_no IS NOT NULL AND a2.enroll_no != '' AND UPPER(a2.enroll_no) = UPPER(v.enrollment_number)
+              ORDER BY a2.status DESC, a2.id DESC LIMIT 1
+          )
+          WHERE UPPER(v.enrollment_number)=:term OR UPPER(v.alumni_registration_number)=:term"""), {"term": term}).mappings().first()
         if active:
             course_row = connection.execute(text("SELECT course FROM courses WHERE id=:id"), {"id": active["course_id"]}).mappings().first() if active.get("course_id") else None
+            photo_url = profile_image_url(active.get("avatar"))
             return {"id": str(active["id"]), "enrollment": active["enrollment_number"], "name": active["student_name"],
                 "branch": active.get("branch") or (course_row or {}).get("course") or "", "college": active.get("college") or "BIST",
                 "amount": float(active.get("amount") or 300), "upi_transaction_id": "", "transaction_slip": None,
                 "status": "ACTIVE", "membership_id": active.get("alumni_registration_number"), "verified_by": "BISTAA Desk",
-                "submitted_at": "", "verified_at": None}
+                "submitted_at": "", "verified_at": None,
+                "photo_url": photo_url, "avatar": photo_url, "img_url": photo_url}
     return None
 
 
@@ -775,7 +800,17 @@ def verify_alumnus_record(
                    a.pos, a.connected_to, a.companyloc, a.companysector, a.avatar, a.native, a.navstate,
                    c.course AS course_title, d.bio AS registration_bio, d.native_state AS reg_native_state
             FROM vista_active_members v
-            LEFT JOIN alumnus_bio a ON (UPPER(a.enroll_no) = UPPER(v.enrollment_number) OR UPPER(v.alumni_registration_number) LIKE '%' || UPPER(a.enroll_no) || '%')
+            LEFT JOIN alumnus_bio a ON a.id = (
+                SELECT a2.id FROM alumnus_bio a2
+                WHERE a2.enroll_no IS NOT NULL 
+                  AND a2.enroll_no != '' 
+                  AND (
+                      UPPER(a2.enroll_no) = UPPER(v.enrollment_number)
+                      OR (length(a2.enroll_no) >= 5 AND UPPER(v.alumni_registration_number) LIKE '%' || UPPER(a2.enroll_no) || '%')
+                  )
+                ORDER BY a2.status DESC, a2.id DESC
+                LIMIT 1
+            )
             LEFT JOIN courses c ON c.id = a.course_id
             LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
             WHERE UPPER(v.enrollment_number) = :term
@@ -795,7 +830,11 @@ def verify_alumnus_record(
                 FROM alumnus_bio a
                 LEFT JOIN courses c ON c.id = a.course_id
                 LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
-                LEFT JOIN vista_active_members v ON UPPER(v.enrollment_number) = UPPER(a.enroll_no)
+                LEFT JOIN vista_active_members v ON (
+                    a.enroll_no IS NOT NULL 
+                    AND a.enroll_no != '' 
+                    AND UPPER(v.enrollment_number) = UPPER(a.enroll_no)
+                )
                 WHERE (a.status = 1 OR a.status = 0)
                   AND (UPPER(a.enroll_no) = :term
                        OR (:digits_id IS NOT NULL AND a.id = :digits_id)
@@ -812,7 +851,17 @@ def verify_alumnus_record(
                        a.pos, a.connected_to, a.companyloc, a.companysector, a.avatar, a.native, a.navstate,
                        c.course AS course_title, d.bio AS registration_bio, d.native_state AS reg_native_state
                 FROM vista_active_members v
-                LEFT JOIN alumnus_bio a ON UPPER(a.enroll_no) = UPPER(v.enrollment_number)
+                LEFT JOIN alumnus_bio a ON a.id = (
+                    SELECT a2.id FROM alumnus_bio a2
+                    WHERE a2.enroll_no IS NOT NULL 
+                      AND a2.enroll_no != '' 
+                      AND (
+                          UPPER(a2.enroll_no) = UPPER(v.enrollment_number)
+                          OR (length(a2.enroll_no) >= 5 AND UPPER(v.alumni_registration_number) LIKE '%' || UPPER(a2.enroll_no) || '%')
+                      )
+                    ORDER BY a2.status DESC, a2.id DESC
+                    LIMIT 1
+                )
                 LEFT JOIN courses c ON c.id = a.course_id
                 LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
                 WHERE UPPER(v.student_name) LIKE :like_term
@@ -829,10 +878,14 @@ def verify_alumnus_record(
                     FROM alumnus_bio a
                     LEFT JOIN courses c ON c.id = a.course_id
                     LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
-                    LEFT JOIN vista_active_members v ON UPPER(v.enrollment_number) = UPPER(a.enroll_no)
+                    LEFT JOIN vista_active_members v ON (
+                        a.enroll_no IS NOT NULL 
+                        AND a.enroll_no != '' 
+                        AND UPPER(v.enrollment_number) = UPPER(a.enroll_no)
+                    )
                     WHERE UPPER(a.firstname) LIKE :like_term
                        OR UPPER(a.lastname) LIKE :like_term
-                       OR UPPER(a.enroll_no) LIKE :like_term
+                       OR (a.enroll_no IS NOT NULL AND a.enroll_no != '' AND UPPER(a.enroll_no) LIKE :like_term)
                     ORDER BY a.status DESC, a.id DESC
                     LIMIT 1
                 """), {"like_term": f"%{clean_term}%"}).mappings().first()
@@ -845,10 +898,20 @@ def verify_alumnus_record(
         }
 
     if active:
-        names = str(active.get("student_name") or "").strip().split(" ", 1)
-        first_name = active.get("firstname") or names[0]
-        last_name = active.get("lastname") or (names[1] if len(names) > 1 else "")
-        full_name = f"{first_name} {last_name}".strip()
+        official_name = str(active.get("student_name") or "").strip()
+        if active.get("firstname"):
+            first_name = active["firstname"]
+            last_name = active.get("lastname") or ""
+            full_name = f"{first_name} {last_name}".strip()
+        elif official_name:
+            full_name = official_name
+            names = official_name.split(" ", 1)
+            first_name = names[0]
+            last_name = names[1] if len(names) > 1 else ""
+        else:
+            first_name = ""
+            last_name = ""
+            full_name = ""
         enrollment_num = active.get("enrollment_number") or ""
         membership_id_val = active.get("alumni_registration_number") or f"BISTAA-{active['id']}"
         branch_val = active.get("course_title") or active.get("branch") or ""
@@ -940,9 +1003,22 @@ def create_event_rsvp(event_id: int, payload: RsvpRequest):
         raise HTTPException(422, "Enter a valid email address.")
     pass_code = f"BGI-PASS-{secrets.token_hex(3).upper()}"
     with engine.begin() as connection:
-        event = connection.execute(text("SELECT id FROM events WHERE id=:id"), {"id": event_id}).first()
+        event = connection.execute(text("SELECT id, schedule, COALESCE(registration_open, 1) AS registration_open FROM events WHERE id=:id"), {"id": event_id}).mappings().first()
         if not event:
             raise HTTPException(404, "Event not found.")
+        if not bool(event["registration_open"]):
+            raise HTTPException(400, "Registrations for this event are currently closed.")
+        scheduled = event["schedule"]
+        if isinstance(scheduled, str):
+            try:
+                scheduled = datetime.fromisoformat(scheduled)
+            except ValueError:
+                pass
+        if isinstance(scheduled, date) and not isinstance(scheduled, datetime):
+            scheduled = datetime.combine(scheduled, datetime.min.time())
+        if isinstance(scheduled, datetime) and scheduled < datetime.now():
+            raise HTTPException(400, "This event has already concluded. Registrations are closed.")
+
         result = connection.execute(text("""INSERT INTO event_rsvps
           (event_id, attendee_name, enrollment_number, email, guest_count, pass_code)
           VALUES (:event_id, :name, :enrollment, :email, :guests, :pass_code)"""), {
@@ -1099,7 +1175,8 @@ def admin_alumni_list(username: str = Depends(require_admin)):
 
 @app.put("/api/admin/alumni/{alumnus_id}")
 def update_admin_alumnus(alumnus_id: int, payload: AdminAlumniUpdate, username: str = Depends(require_roles("reviewer"))):
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.email.strip()):
+    email_clean = payload.email.strip()
+    if email_clean and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email_clean):
         raise HTTPException(422, "Enter a valid email address.")
     with engine.begin() as connection:
         if not connection.execute(text("SELECT 1 FROM courses WHERE id=:id"), {"id": payload.course_id}).first():
@@ -1111,7 +1188,7 @@ def update_admin_alumnus(alumnus_id: int, payload: AdminAlumniUpdate, username: 
         result = connection.execute(text("""UPDATE alumnus_bio SET firstname=:firstname, lastname=:lastname,
           college=:college, batch=:batch, course_id=:course_id, email=:email, pos=:pos,
           connected_to=:connected_to, companyloc=:companyloc, companysector=:companysector
-          WHERE id=:id"""), {**payload.model_dump(exclude={"bio"}), "id": alumnus_id, "email": payload.email.strip()})
+          WHERE id=:id"""), {**payload.model_dump(exclude={"bio"}), "id": alumnus_id, "email": email_clean})
         if not result.rowcount:
             raise HTTPException(404, "Alumni profile not found.")
         # Keep the stable identity fields in the BISTAA register aligned when
@@ -1196,9 +1273,10 @@ def create_admin_event(payload: AdminEventRequest, username: str = Depends(requi
     except ValueError:
         raise HTTPException(422, "Enter a valid event date and time.")
     with engine.begin() as connection:
-        result = connection.execute(text("INSERT INTO events (title, content, schedule, banner) VALUES (:title, :content, :schedule, :banner)"), {
+        result = connection.execute(text("INSERT INTO events (title, content, schedule, banner, registration_open) VALUES (:title, :content, :schedule, :banner, :reg_open)"), {
             "title": payload.title.strip(), "content": payload.description.strip(),
             "schedule": scheduled.replace(tzinfo=None).isoformat(sep=" "), "banner": payload.banner.strip(),
+            "reg_open": int(payload.registration_open),
         })
     audit(username, "created", "event", result.lastrowid, payload.title)
     return {"id": result.lastrowid, "created": True}
@@ -1211,9 +1289,10 @@ def update_admin_event(event_id: int, payload: AdminEventRequest, username: str 
     except ValueError:
         raise HTTPException(422, "Enter a valid event date and time.")
     with engine.begin() as connection:
-        result = connection.execute(text("UPDATE events SET title=:title, content=:content, schedule=:schedule, banner=:banner WHERE id=:id"), {
+        result = connection.execute(text("UPDATE events SET title=:title, content=:content, schedule=:schedule, banner=:banner, registration_open=:reg_open WHERE id=:id"), {
             "id": event_id, "title": payload.title.strip(), "content": payload.description.strip(),
             "schedule": scheduled.replace(tzinfo=None).isoformat(sep=" "), "banner": payload.banner.strip(),
+            "reg_open": int(payload.registration_open),
         })
         if not result.rowcount:
             raise HTTPException(404, "Event not found.")
@@ -1263,16 +1342,25 @@ def update_gallery_item(gallery_id: int, payload: GalleryUpdateRequest, username
 
 
 @app.delete("/api/admin/gallery/{gallery_id}")
-def delete_gallery_item(gallery_id: int, username: str = Depends(require_roles("content_manager"))):
+def delete_gallery_item(gallery_id: str, username: str = Depends(require_roles("content_manager"))):
+    clean_id = str(gallery_id).replace("managed-", "")
     with engine.begin() as connection:
-        row = connection.execute(text("SELECT image_path FROM managed_gallery WHERE id=:id"), {"id": gallery_id}).mappings().first()
-        if not row:
-            raise HTTPException(404, "Managed gallery item not found.")
-        connection.execute(text("DELETE FROM managed_gallery WHERE id=:id"), {"id": gallery_id})
-    image_file = (GALLERY_IMAGE_DIR / Path(row["image_path"]).name).resolve()
-    if image_file.parent == GALLERY_IMAGE_DIR and image_file.is_file():
-        image_file.unlink()
-    audit(username, "deleted", "gallery_item", gallery_id)
+        row = connection.execute(text("SELECT image_path FROM managed_gallery WHERE id=:id"), {"id": clean_id}).mappings().first()
+        if row:
+            connection.execute(text("DELETE FROM managed_gallery WHERE id=:id"), {"id": clean_id})
+            image_file = (GALLERY_IMAGE_DIR / Path(row["image_path"]).name).resolve()
+            if image_file.parent == GALLERY_IMAGE_DIR and image_file.is_file():
+                try:
+                    image_file.unlink()
+                except OSError:
+                    pass
+        else:
+            legacy = connection.execute(text("SELECT id FROM gallery WHERE id=:id"), {"id": clean_id}).mappings().first()
+            if legacy:
+                connection.execute(text("DELETE FROM gallery WHERE id=:id"), {"id": clean_id})
+            else:
+                raise HTTPException(404, "Gallery item not found.")
+    audit(username, "deleted", "gallery_item", clean_id)
     return {"id": gallery_id, "deleted": True}
 
 

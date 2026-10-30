@@ -355,6 +355,9 @@ export default function HomePage({ alumniList, membersList = [], eventsList, set
             {upcomingEvents.map((ev, i) => {
               const dateStr = ev.date || '';
               const [day, month] = dateStr.split(' ');
+              const isPast = ev.is_past ?? (ev.schedule ? new Date(ev.schedule) < new Date() : false);
+              const isRegOpen = ev.registration_open !== false;
+              const canRsvp = ev.can_rsvp ?? (isRegOpen && !isPast);
               return (
                 <div key={i} className="event-card-premium">
                   <div className="event-card-img">
@@ -369,7 +372,22 @@ export default function HomePage({ alumniList, membersList = [], eventsList, set
                     </div>
                   </div>
                   <div className="event-card-body">
-                    <span className="event-type-badge">{ev.type || 'Institutional Gathering'}</span>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.4rem' }}>
+                      <span className="event-type-badge">{ev.type || 'Institutional Gathering'}</span>
+                      {isPast ? (
+                        <span style={{ background: '#f1f5f9', color: '#475569', fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                          Event Concluded
+                        </span>
+                      ) : !isRegOpen ? (
+                        <span style={{ background: '#fef2f2', color: '#b91c1c', fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                          Registrations Closed
+                        </span>
+                      ) : (
+                        <span style={{ background: '#ecfdf5', color: '#047857', fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+                          RSVP Open
+                        </span>
+                      )}
+                    </div>
                     <h3 className="event-card-title">{ev.title}</h3>
                     <div className="event-meta-row">
                       <MapPin size={14} className="event-meta-icon" />
@@ -382,11 +400,30 @@ export default function HomePage({ alumniList, membersList = [], eventsList, set
                   </div>
                   <div className="event-card-footer">
                     <span className="event-spots-badge">
-                      {ev.attendee_count} Registered
+                      {ev.registered || ev.attendee_count || 0} Registered
                     </span>
-                    <button className="btn btn-primary btn-sm" onClick={() => onRsvpClick && onRsvpClick(ev)}>
-                      RSVP Free Pass
-                    </button>
+                    {canRsvp ? (
+                      <button className="btn btn-primary btn-sm" onClick={() => onRsvpClick && onRsvpClick(ev)}>
+                        RSVP Free Pass
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn-sm"
+                        disabled
+                        style={{
+                          background: isPast ? '#f1f5f9' : '#fef2f2',
+                          color: isPast ? '#64748b' : '#b91c1c',
+                          border: `1px solid ${isPast ? '#cbd5e1' : '#fecaca'}`,
+                          cursor: 'not-allowed',
+                          opacity: 0.9,
+                          fontWeight: 600,
+                          padding: '0.4rem 0.85rem',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        {isPast ? 'Event Concluded' : 'Registrations Closed'}
+                      </button>
+                    )}
                   </div>
                 </div>
               );

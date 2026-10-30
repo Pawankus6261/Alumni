@@ -1,19 +1,19 @@
 import React from 'react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import DataLoadNotice from '../components/DataLoadNotice';
-import { 
-  MapPin, 
-  Users, 
-  Ticket, 
-  Clock, 
-  CheckCircle2, 
+import {
+  MapPin,
+  Users,
+  Ticket,
+  Clock,
+  CheckCircle2,
   ArrowRight
 } from 'lucide-react';
 
 export default function EventsPage({ eventsList, onRsvpClick, setView, dataLoadFailed, dataLoading, onRetryData }) {
   return (
     <div style={{ minHeight: '80vh' }}>
-      
+
       {/* Premium Hero Band */}
       <div className="page-hero-band">
         <div className="container">
@@ -57,95 +57,132 @@ export default function EventsPage({ eventsList, onRsvpClick, setView, dataLoadF
               const dateParts = event.date.match(/([A-Za-z]+)\s+(\d{1,2})/);
               const eventMonth = dateParts?.[1]?.slice(0, 3).toUpperCase() || 'DATE';
               const eventDay = dateParts?.[2] || '--';
+              const isPast = event.is_past ?? (event.schedule ? new Date(event.schedule) < new Date() : false);
+              const isRegOpen = event.registration_open !== false;
+              const canRsvp = event.can_rsvp ?? (isRegOpen && !isPast);
 
               return (
-              <div key={event.id} className="event-card-premium">
-                
-                {/* Event Visual Header */}
-                <div className="event-card-img">
-                  <ImageWithPlaceholder
-                    src={event.image}
-                    alt={event.title}
-                    placeholderLabel={`${event.title} event photo`}
-                  />
-                  <div className="event-card-img-overlay" />
-                  
-                  {/* Date Badge */}
-                  <div className="event-card-date-badge">
-                    <span className="event-date-day">{eventDay}</span>
-                    <span className="event-date-month">{eventMonth}</span>
-                  </div>
+                <div key={event.id} className="event-card-premium">
 
-                  {/* Badge */}
-                  <div className="event-card-feature-badge">
-                    {event.badge || event.type}
-                  </div>
-                </div>
+                  {/* Event Visual Header */}
+                  <div className="event-card-img">
+                    <ImageWithPlaceholder
+                      src={event.image}
+                      alt={event.title}
+                      placeholderLabel={`${event.title} event photo`}
+                    />
+                    <div className="event-card-img-overlay" />
 
-                {/* Event Content Body */}
-                <div className="event-card-body">
-                  <span className="event-type-badge">
-                    {event.type === 'CAMPUS' ? '🏛️ On-Campus Reunion' : event.type === 'VIRTUAL' ? '💻 Virtual Panel' : '🚀 Hybrid Summit'}
-                  </span>
-                  
-                  <h3 className="event-card-title">
-                    {event.title}
-                  </h3>
-
-                  {event.subtitle && (
-                    <div className="event-card-subtitle">
-                      {event.subtitle}
+                    {/* Date Badge */}
+                    <div className="event-card-date-badge">
+                      <span className="event-date-day">{eventDay}</span>
+                      <span className="event-date-month">{eventMonth}</span>
                     </div>
-                  )}
 
-                  <p className="event-card-description">
-                    {event.description}
-                  </p>
-
-                  <div className="event-meta-row">
-                    <Clock size={15} className="event-meta-icon" />
-                    <span><b>Schedule:</b> {event.date} • {event.time}</span>
-                  </div>
-
-                  <div className="event-meta-row event-meta-row-venue">
-                    <MapPin size={15} className="event-meta-icon" />
-                    <span><b>Venue:</b> {event.venue}</span>
-                  </div>
-
-                  {/* Key Highlights */}
-                  {event.highlights && (
-                    <div className="event-highlights-box">
-                      <div className="event-highlights-title">
-                        Session Highlights
-                      </div>
-                      <div className="event-highlights-list">
-                        {event.highlights.map((h, i) => (
-                          <div key={i} className="event-highlight-item">
-                            <CheckCircle2 size={14} aria-hidden="true" />
-                            <span>{h}</span>
-                          </div>
-                        ))}
-                      </div>
+                    {/* Badge */}
+                    <div className="event-card-feature-badge">
+                      {event.badge || event.type || (isPast ? 'Past Event' : 'Upcoming')}
                     </div>
-                  )}
-                </div>
-
-                {/* Footer RSVP */}
-                <div className="event-card-footer">
-                  <div className="event-spots-badge">
-                    <Users size={14} style={{ display: 'inline', marginRight: 4 }} />
-                    <b>{event.attendee_count}</b> / {event.max_capacity} Confirmed
                   </div>
 
-                  <button 
-                    className="btn btn-primary btn-sm"
-                    onClick={() => onRsvpClick(event)}
-                  >
-                    <Ticket size={14} /> RSVP Free Pass
-                  </button>
-                </div>
+                  {/* Event Content Body */}
+                  <div className="event-card-body">
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.4rem' }}>
+                      <span className="event-type-badge">
+                        {event.type === 'CAMPUS' ? ' On-Campus Reunion' : event.type === 'VIRTUAL' ? ' Virtual Panel' : ' Hybrid Summit'}
+                      </span>
+                      {isPast ? (
+                        <span style={{ background: '#f1f5f9', color: '#475569', fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                          Event Concluded
+                        </span>
+                      ) : !isRegOpen ? (
+                        <span style={{ background: '#fef2f2', color: '#b91c1c', fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                          Registrations Closed
+                        </span>
+                      ) : (
+                        <span style={{ background: '#ecfdf5', color: '#047857', fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+                          RSVP Open
+                        </span>
+                      )}
+                    </div>
 
-              </div>
+                    <h3 className="event-card-title">
+                      {event.title}
+                    </h3>
+
+                    {event.subtitle && (
+                      <div className="event-card-subtitle">
+                        {event.subtitle}
+                      </div>
+                    )}
+
+                    <p className="event-card-description">
+                      {event.description}
+                    </p>
+
+                    <div className="event-meta-row">
+                      <Clock size={15} className="event-meta-icon" />
+                      <span><b>Schedule:</b> {event.date} • {event.time}</span>
+                    </div>
+
+                    <div className="event-meta-row event-meta-row-venue">
+                      <MapPin size={15} className="event-meta-icon" />
+                      <span><b>Venue:</b> {event.venue}</span>
+                    </div>
+
+                    {/* Key Highlights */}
+                    {event.highlights && (
+                      <div className="event-highlights-box">
+                        <div className="event-highlights-title">
+                          Session Highlights
+                        </div>
+                        <div className="event-highlights-list">
+                          {event.highlights.map((h, i) => (
+                            <div key={i} className="event-highlight-item">
+                              <CheckCircle2 size={14} aria-hidden="true" />
+                              <span>{h}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer RSVP */}
+                  <div className="event-card-footer">
+                    <div className="event-spots-badge">
+                      <Users size={14} style={{ display: 'inline', marginRight: 4 }} />
+                      <b>{event.registered || event.attendee_count || 0}</b> Confirmed
+                    </div>
+
+                    {canRsvp ? (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => onRsvpClick(event)}
+                      >
+                        <Ticket size={14} /> RSVP Free Pass
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn-sm"
+                        disabled
+                        style={{
+                          background: isPast ? '#f1f5f9' : '#fef2f2',
+                          color: isPast ? '#64748b' : '#b91c1c',
+                          border: `1px solid ${isPast ? '#cbd5e1' : '#fecaca'}`,
+                          cursor: 'not-allowed',
+                          opacity: 0.9,
+                          fontWeight: 600,
+                          padding: '0.4rem 0.85rem',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        {isPast ? 'Event Concluded' : 'Registrations Closed'}
+                      </button>
+                    )}
+                  </div>
+
+                </div>
               );
             })}
           </div>}

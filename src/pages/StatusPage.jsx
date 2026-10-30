@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getBistaaStatus } from '../api';
+import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import { createMemberIdentityPayload, createMemberIdentityQr, QR_CREDIT } from '../utils/memberIdentityQr';
 
 export default function StatusPage({ onOpenSlip, onOpenDigitalPass, setView, initialEnrollment = '' }) {
@@ -363,19 +364,13 @@ export default function StatusPage({ onOpenSlip, onOpenDigitalPass, setView, ini
 
                       <div className="pass-grid-body" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '1.5rem', alignItems: 'center' }}>
                         <div className="pass-avatar-box" style={{ width: 84, height: 84, borderRadius: '4px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
-                          <div style={{
-                            width: '100%',
-                            height: '100%',
-                            background: '#f1f5f9',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#003366',
-                            fontWeight: 700,
-                            fontSize: '1.75rem'
-                          }}>
-                            {searchedRecord.name.split(' ').map(n=>n[0]).join('')}
-                          </div>
+                          <ImageWithPlaceholder
+                            src={searchedRecord.photo_url || searchedRecord.img_url || searchedRecord.avatar}
+                            alt={searchedRecord.name}
+                            variant="avatar"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            placeholderLabel={searchedRecord.name ? searchedRecord.name.split(' ').map(n=>n[0]).join('') : 'AL'}
+                          />
                         </div>
 
                         <div className="pass-fields-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>

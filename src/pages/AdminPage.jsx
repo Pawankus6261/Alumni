@@ -46,7 +46,12 @@ function AdminDialog({ dialog, onClose, onSubmit, busy }) {
   const [values, setValues] = useState(dialog?.initial || {});
   const [photoTouched, setPhotoTouched] = useState(false);
   const [photoPreview, setPhotoPreview] = useState('');
-  useEffect(() => { setValues(dialog?.initial || {}); setPhotoTouched(false); }, [dialog]);
+  const [isNewCategory, setIsNewCategory] = useState(false);
+  useEffect(() => {
+    setValues(dialog?.initial || {});
+    setPhotoTouched(false);
+    setIsNewCategory(false);
+  }, [dialog]);
   useEffect(() => {
     if (!(values.avatar instanceof File)) { setPhotoPreview(''); return undefined; }
     const preview = URL.createObjectURL(values.avatar);
@@ -64,6 +69,56 @@ function AdminDialog({ dialog, onClose, onSubmit, busy }) {
       </div>}
       <div className="admin-dialog-fields">{dialog.fields.map(field => <label className={`admin-dialog-field${field.wide ? ' admin-field-wide' : ''}`} key={field.name}>{field.label}
         {field.type === 'textarea' ? <textarea required={field.required !== false} rows={4} value={values[field.name] || ''} onChange={event => change(field.name, event.target.value)} />
+          : field.type === 'category_picker' ? (
+            <div className="admin-category-picker" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
+              <select
+                required={!isNewCategory}
+                value={isNewCategory ? '__NEW_CATEGORY__' : (values[field.name] || field.categories?.[0] || 'Campus Life')}
+                onChange={event => {
+                  if (event.target.value === '__NEW_CATEGORY__') {
+                    setIsNewCategory(true);
+                    change(field.name, '');
+                  } else {
+                    setIsNewCategory(false);
+                    change(field.name, event.target.value);
+                  }
+                }}
+              >
+                <optgroup label="Select Existing Category">
+                  {(field.categories || ['Campus Life', 'Convocation', 'Reunions', 'Awards']).map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="New Category">
+                  <option value="__NEW_CATEGORY__">➕ Add new category…</option>
+                </optgroup>
+              </select>
+              {isNewCategory && (
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Enter new category name (e.g. 2K23, Sports Day)"
+                    required
+                    autoFocus
+                    value={values[field.name] || ''}
+                    onChange={event => change(field.name, event.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="admin-secondary-btn admin-small-btn"
+                    style={{ whiteSpace: 'nowrap' }}
+                    onClick={() => {
+                      setIsNewCategory(false);
+                      change(field.name, field.categories?.[0] || 'Campus Life');
+                    }}
+                  >
+                    Use existing
+                  </button>
+                </div>
+              )}
+            </div>
+          )
           : field.type === 'select' ? <select required={field.required !== false} value={values[field.name] || ''} onChange={event => { const value = event.target.value; if (field.onChange) setValues(current => ({ ...current, [field.name]: value, ...field.onChange(value, current) })); else change(field.name, value); }}>{field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
           : <input type={field.type || 'text'} required={field.required !== false} accept={field.accept} minLength={field.minLength} value={field.type === 'file' ? undefined : (values[field.name] || '')} onChange={event => { const value = field.type === 'file' ? event.target.files?.[0] : event.target.value; change(field.name, value); if (field.name === 'avatar' || field.name === 'photo_url') setPhotoTouched(true); }} />}
         {field.help && <small className="admin-dialog-help">{field.help}</small>}
@@ -294,17 +349,24 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
     let successMessage;
     try {
       if (dialog.kind === 'event') {
-        const payload = { title: values.title, description: values.description || '', schedule: values.schedule, banner: values.banner || '' };
+        const payload = {
+          title: values.title.trim(),
+          description: values.description || '',
+          schedule: values.schedule,
+          banner: values.banner || '',
+          registration_open: values.registration_open === 'true' || values.registration_open === true,
+        };
         if (dialog.id) await updateAdminEvent(dialog.id, payload); else await createAdminEvent(payload);
       } else if (dialog.kind === 'course') {
         const payload = { course: values.course, about: values.about || '' };
         if (dialog.id) await updateDepartment(dialog.id, payload); else await createDepartment(payload);
       } else if (dialog.kind === 'gallery') {
-        if (dialog.id) await updateAdminGalleryItem(dialog.id, { title: values.title, category: values.category, description: values.description || '', sort_order: Number(values.sort_order || 0), featured: values.featured === 'true' || values.featured === true });
+        const cleanCategory = (values.category || 'Campus Life').trim() || 'Campus Life';
+        if (dialog.id) await updateAdminGalleryItem(dialog.id, { title: values.title.trim(), category: cleanCategory, description: (values.description || '').trim(), sort_order: Number(values.sort_order || 0), featured: values.featured === 'true' || values.featured === true });
         else {
           const form = new FormData();
-          form.append('title', values.title); form.append('category', values.category || 'Campus Life');
-          form.append('description', values.description || ''); form.append('image', values.image);
+          form.append('title', values.title.trim()); form.append('category', cleanCategory);
+          form.append('description', (values.description || '').trim()); form.append('image', values.image);
           await createAdminGalleryItem(form);
         }
       } else if (dialog.kind === 'account') {
@@ -312,12 +374,25 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
       } else if (dialog.kind === 'password') {
         await resetAdminAccountPassword(dialog.username, values.password);
       } else if (dialog.kind === 'alumni') {
-        const { avatar, photo_url: photoUrl, ...profileValues } = values;
+        const { avatar, photo_url: photoUrl } = values;
         if (photoTouched) await updateAdminAlumnusPhoto(dialog.id, { photo_url: photoUrl || '', file: avatar });
         const profileFields = ['firstname', 'lastname', 'email', 'college', 'batch', 'course_id', 'pos', 'connected_to', 'companyloc', 'companysector', 'bio'];
         const profileChanged = profileFields.some(key => String(values[key] ?? '').trim() !== String(dialog.initial?.[key] ?? '').trim());
         if (profileChanged) {
-          const result = await updateAdminAlumnus(dialog.id, { ...profileValues, batch: Number(values.batch), course_id: Number(values.course_id) });
+          const payload = {
+            firstname: (values.firstname || '').trim(),
+            lastname: (values.lastname || '').trim(),
+            email: (values.email || '').trim(),
+            college: (values.college || '').trim() || 'BIST',
+            batch: Number(values.batch),
+            course_id: Number(values.course_id),
+            pos: (values.pos || '').trim(),
+            connected_to: (values.connected_to || '').trim(),
+            companyloc: (values.companyloc || '').trim(),
+            companysector: (values.companysector || '').trim(),
+            bio: (values.bio || '').trim(),
+          };
+          const result = await updateAdminAlumnus(dialog.id, payload);
           if (result.membership_synced) successMessage = 'Alumni profile and linked BISTAA member synced.';
         }
       } else if (dialog.kind === 'bistaa-member') {
@@ -428,19 +503,32 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
   const openEventDialog = (event = null) => setDialog({ kind: 'event', id: event?.id, title: event ? 'Edit event' : 'Create event', description: 'Manage the event details shown on the public events page.', success: event ? 'Event updated.' : 'Event created.', fields: [
     { name: 'title', label: 'Event name', required: true },
     { name: 'schedule', label: 'Date and time', type: 'datetime-local', required: true },
+    { name: 'registration_open', label: 'RSVP / Registration Status', type: 'select', required: true, options: [
+      { value: 'true', label: 'Open (Accept RSVPs)' },
+      { value: 'false', label: 'Closed (Disable RSVPs)' },
+    ] },
     { name: 'description', label: 'Description', type: 'textarea', wide: true, required: false },
     { name: 'banner', label: 'Banner image URL', wide: true, required: false },
-  ], initial: event ? { title: event.title, description: event.description, schedule: event.schedule?.replace(' ', 'T').slice(0, 16), banner: event.image || '' } : { schedule: new Date(Date.now() + 86400000).toISOString().slice(0, 16) } });
+  ], initial: event ? {
+    title: event.title,
+    description: event.description,
+    schedule: event.schedule?.replace(' ', 'T').slice(0, 16),
+    banner: event.image || '',
+    registration_open: String(event.registration_open !== false),
+  } : {
+    schedule: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+    registration_open: 'true',
+  } });
 
   const openCourseDialog = (course = null) => setDialog({ kind: 'course', id: course?.id, title: course ? 'Edit department' : 'Add department', description: 'Keep academic department names and descriptions up to date.', success: course ? 'Department updated.' : 'Department added.', fields: [
     { name: 'course', label: 'Department / course name', required: true },
     { name: 'about', label: 'Description', type: 'textarea', wide: true, required: false },
   ], initial: course ? { course: course.course, about: course.about } : {} });
 
-  const openAlumniDialog = person => setDialog({ kind: 'alumni', id: person.id, photoEditor: true, title: 'Edit alumni profile', description: `Update the directory record for ${person.firstname} ${person.lastname}.`, success: 'Alumni profile updated.', fields: [
+  const openAlumniDialog = person => setDialog({ kind: 'alumni', id: person.id, photoEditor: true, title: 'Edit alumni profile', description: `Update the directory record for ${person.firstname || ''} ${person.lastname || ''}`.trim() + '.', success: 'Alumni profile updated.', fields: [
     { name: 'firstname', label: 'First name', required: true },
-    { name: 'lastname', label: 'Last name', required: true },
-    { name: 'email', label: 'Email address', type: 'email', required: true },
+    { name: 'lastname', label: 'Last name', required: false },
+    { name: 'email', label: 'Email address', type: 'email', required: false },
     { name: 'college', label: 'College', required: true },
     { name: 'batch', label: 'Graduation batch', type: 'number', required: true },
     { name: 'course_id', label: 'Department / course', type: 'select', required: true, options: courses.map(course => ({ value: course.id, label: course.course })) },
@@ -451,7 +539,7 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
     { name: 'bio', label: 'Professional summary', type: 'textarea', wide: true, required: false },
     { name: 'photo_url', label: 'Profile photo URL', wide: true, required: false, help: 'Use a direct image URL, or leave blank to remove the current photo.' },
     { name: 'avatar', label: 'Upload profile photo (JPG, PNG, WebP; max 5 MB)', type: 'file', accept: 'image/jpeg,image/png,image/webp', wide: true, required: false, help: 'If both a URL and file are provided, the uploaded image is used.' },
-  ], initial: { ...person, photo_url: person.photo_url || '', course_id: person.course_id || courses[0]?.id || '' } });
+  ], initial: { ...person, lastname: person.lastname || '', photo_url: person.photo_url || '', course_id: person.course_id || courses[0]?.id || '' } });
 
   const openBistaaMemberDialog = member => setDialog({
     kind: 'bistaa-member', id: member.active_member_id, profileId: member.profile_id, photoEditor: true,
@@ -512,9 +600,18 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
 
   const openGalleryDialog = item => {
     const managedId = String(item?.id || '').match(/^managed-(\d+)$/)?.[1];
+    const defaultCategories = ['Campus Life', 'Convocation', 'Reunions', 'Awards'];
+    const customFromGallery = gallery.map(g => (g.category || '').trim()).filter(Boolean);
+    const itemCategory = (item?.category || '').trim();
+    const categories = Array.from(new Set([
+      ...defaultCategories,
+      ...customFromGallery,
+      ...(itemCategory ? [itemCategory] : [])
+    ]));
+
     setDialog({ kind: 'gallery', id: managedId, title: managedId ? 'Edit gallery item' : 'Add gallery photo', description: managedId ? 'Update the public photo caption and category.' : 'Upload an image to add it to the public gallery.', success: managedId ? 'Gallery item updated.' : 'Gallery photo added.', fields: [
       { name: 'title', label: 'Photo title', required: true },
-      { name: 'category', label: 'Section / category', required: true },
+      { name: 'category', label: 'Section / category', type: 'category_picker', categories, required: true },
       { name: 'description', label: 'Short description', type: 'textarea', wide: true, required: false },
       ...(managedId ? [{ name: 'sort_order', label: 'Display order', type: 'number', required: true }, { name: 'featured', label: 'Featured photo', type: 'select', options: [{ value: 'false', label: 'No' }, { value: 'true', label: 'Yes' }] }] : []),
       ...(!managedId ? [{ name: 'image', label: 'Image file (JPG, PNG, WebP; max 5 MB)', type: 'file', accept: 'image/jpeg,image/png,image/webp', required: true }] : []),
@@ -697,12 +794,36 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
 
   const renderEvents = () => <>
     {heading('Events', 'Create, update, and remove events published on the alumni portal.', <div className="admin-heading-actions">{canManageContent && <button className="admin-primary-btn" onClick={() => openEventDialog()}><CalendarDays size={16} /> Create event</button>}{sectionAction}</div>)}
-    {events.length ? <div className="admin-card-grid">{events.map(event => <article className="admin-content-card" key={event.id}><div className="admin-content-image"><ImageWithPlaceholder src={event.image} alt="" placeholderLabel="Event image" /></div><div className="admin-content-body"><span className="admin-tag">{event.category || 'Gathering'}</span><h2>{event.title}</h2><p>{event.description || event.subtitle}</p><div className="admin-summary-line"><span>Date</span><strong>{event.date || 'To be announced'}</strong></div><div className="admin-summary-line"><span>Reservations</span><strong>{event.registered || 0}</strong></div>{canManageContent && <div className="admin-card-actions"><button className="admin-secondary-btn admin-small-btn" onClick={() => openEventDialog(event)}>Edit event</button><button className="admin-danger-btn admin-small-btn" disabled={actionId === String(event.id)} onClick={() => removeRecord('event', event)}>Delete</button></div>}</div></article>)}</div> : <div className="admin-empty">No events are available.</div>}
+    {events.length ? <div className="admin-card-grid">{events.map(event => {
+      const isPast = event.is_past ?? (event.schedule ? new Date(event.schedule) < new Date() : false);
+      const isRegOpen = event.registration_open !== false;
+      return <article className="admin-content-card" key={event.id}>
+        <div className="admin-content-image"><ImageWithPlaceholder src={event.image} alt="" placeholderLabel="Event image" /></div>
+        <div className="admin-content-body">
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
+            <span className="admin-tag">{event.category || 'Gathering'}</span>
+            {isPast ? (
+              <span className="admin-tag" style={{ background: '#f1f5f9', color: '#64748b' }}>Concluded (Past)</span>
+            ) : !isRegOpen ? (
+              <span className="admin-tag" style={{ background: '#fef2f2', color: '#b91c1c' }}>RSVP Closed</span>
+            ) : (
+              <span className="admin-tag" style={{ background: '#ecfdf5', color: '#047857' }}>RSVP Open</span>
+            )}
+          </div>
+          <h2>{event.title}</h2>
+          <p>{event.description || event.subtitle}</p>
+          <div className="admin-summary-line"><span>Date</span><strong>{event.date || 'To be announced'}</strong></div>
+          <div className="admin-summary-line"><span>RSVP Status</span><strong style={{ color: isPast ? '#64748b' : !isRegOpen ? '#b91c1c' : '#047857' }}>{isPast ? 'Closed (Past event)' : !isRegOpen ? 'Closed by admin' : 'Open'}</strong></div>
+          <div className="admin-summary-line"><span>Reservations</span><strong>{event.registered || 0}</strong></div>
+          {canManageContent && <div className="admin-card-actions"><button className="admin-secondary-btn admin-small-btn" onClick={() => openEventDialog(event)}>Edit event</button><button className="admin-danger-btn admin-small-btn" disabled={actionId === String(event.id)} onClick={() => removeRecord('event', event)}>Delete</button></div>}
+        </div>
+      </article>;
+    })}</div> : <div className="admin-empty">No events are available.</div>}
   </>;
 
   const renderGallery = () => <>
     {heading('Gallery', 'Upload and manage photo sections shown on the public site.', <div className="admin-heading-actions">{canManageContent && <button className="admin-primary-btn" onClick={() => openGalleryDialog()}><FileImage size={16} /> Add photo</button>}{sectionAction}</div>)}
-    {gallery.length ? <div className="admin-gallery-grid">{gallery.map(item => { const managed = String(item.id).startsWith('managed-'); return <article className="admin-gallery-card" key={item.id}><ImageWithPlaceholder src={item.image} alt={item.title || 'Gallery image'} placeholderLabel="Image unavailable" />{item.featured && <span className="admin-featured-badge">Featured</span>}<div><b>{item.title || 'Campus memory'}</b><small>{item.category || 'Gallery'}{Number.isFinite(item.sort_order) ? ` · Order ${item.sort_order}` : ''}</small>{managed && canManageContent && <div className="admin-card-actions"><button className="admin-secondary-btn admin-small-btn" onClick={() => openGalleryDialog(item)}>Edit</button><button className="admin-danger-btn admin-small-btn" onClick={() => removeRecord('gallery', { ...item, id: String(item.id).replace('managed-', '') })}>Delete</button></div>}</div></article>; })}</div> : <div className="admin-empty">No gallery photos are available.</div>}
+    {gallery.length ? <div className="admin-gallery-grid">{gallery.map(item => { const managed = String(item.id).startsWith('managed-'); return <article className="admin-gallery-card" key={item.id}><ImageWithPlaceholder src={item.image} alt={item.title || 'Gallery image'} placeholderLabel="Image unavailable" />{item.featured && <span className="admin-featured-badge">Featured</span>}<div><b>{item.title || 'Campus memory'}</b><small>{item.category || 'Gallery'}{Number.isFinite(item.sort_order) ? ` · Order ${item.sort_order}` : ''}</small>{canManageContent && <div className="admin-card-actions">{managed && <button className="admin-secondary-btn admin-small-btn" onClick={() => openGalleryDialog(item)}>Edit</button>}<button className="admin-danger-btn admin-small-btn" onClick={() => removeRecord('gallery', { ...item, id: String(item.id).replace('managed-', '') })}>Delete</button></div>}</div></article>; })}</div> : <div className="admin-empty">No gallery photos are available.</div>}
   </>;
 
   const renderDepartments = () => <>

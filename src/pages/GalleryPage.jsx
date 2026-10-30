@@ -1,24 +1,68 @@
-import React, { useState } from 'react';
-import { X, ZoomIn, Sparkles, Award, GraduationCap, Users } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { X, ZoomIn, Sparkles, Award, GraduationCap, Users, Camera, Filter } from 'lucide-react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import DataLoadNotice from '../components/DataLoadNotice';
 
+const DEFAULT_CATEGORY_METADATA = {
+  'Convocation': { label: 'Convocations', icon: GraduationCap, description: 'Ceremonies and milestones from across the institute.' },
+  'Reunions': { label: 'Reunions', icon: Users, description: 'Alumni returning to campus and reconnecting.' },
+  'Awards': { label: 'Alumni Awards', icon: Award, description: 'Celebrating the achievements of Bansal graduates.' },
+  'Campus Life': { label: 'Campus Life', icon: Sparkles, description: 'Scenes and memories from everyday campus life.' }
+};
+
 export default function GalleryPage({ galleryList, dataLoadFailed, dataLoading, onRetryData }) {
   const [activeLightboxImage, setActiveLightboxImage] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState('ALL');
 
-  const categories = [
-    { id: 'Convocation', label: 'Convocations', icon: GraduationCap, description: 'Ceremonies and milestones from across the institute.' },
-    { id: 'Reunions', label: 'Reunions', icon: Users, description: 'Alumni returning to campus and reconnecting.' },
-    { id: 'Awards', label: 'Alumni Awards', icon: Award, description: 'Celebrating the achievements of Bansal graduates.' },
-    { id: 'Campus Life', label: 'Campus Life', icon: Sparkles, description: 'Scenes and memories from everyday campus life.' }
-  ];
+  const photoSections = useMemo(() => {
+    if (!Array.isArray(galleryList)) return [];
 
-  const photoSections = categories
-    .map(category => ({
-      ...category,
-      photos: galleryList.filter(photo => photo.category === category.id),
-    }))
-    .filter(section => section.photos.length > 0);
+    const categoryMap = new Map();
+
+    galleryList.forEach(photo => {
+      const rawCategory = (photo.category || 'Campus Life').trim() || 'Campus Life';
+      const key = rawCategory.toLowerCase();
+      if (!categoryMap.has(key)) {
+        categoryMap.set(key, { displayName: rawCategory, photos: [] });
+      }
+      categoryMap.get(key).photos.push(photo);
+    });
+
+    const standardKeys = ['campus life', 'convocation', 'reunions', 'awards'];
+    const orderedSections = [];
+
+    standardKeys.forEach(stdKey => {
+      if (categoryMap.has(stdKey)) {
+        const item = categoryMap.get(stdKey);
+        const meta = Object.entries(DEFAULT_CATEGORY_METADATA).find(([k]) => k.toLowerCase() === stdKey)?.[1];
+        orderedSections.push({
+          id: item.displayName,
+          label: meta?.label || item.displayName,
+          icon: meta?.icon || Sparkles,
+          description: meta?.description || `Memories and moments from ${item.displayName}.`,
+          photos: item.photos,
+        });
+        categoryMap.delete(stdKey);
+      }
+    });
+
+    categoryMap.forEach((item) => {
+      orderedSections.push({
+        id: item.displayName,
+        label: item.displayName,
+        icon: Camera,
+        description: `Memories and highlights from ${item.displayName}.`,
+        photos: item.photos,
+      });
+    });
+
+    return orderedSections;
+  }, [galleryList]);
+
+  const visibleSections = useMemo(() => {
+    if (selectedCategory === 'ALL') return photoSections;
+    return photoSections.filter(sec => sec.id.toLowerCase() === selectedCategory.toLowerCase());
+  }, [photoSections, selectedCategory]);
 
   return (
     <div style={{ minHeight: '80vh' }}>
@@ -41,47 +85,85 @@ export default function GalleryPage({ galleryList, dataLoadFailed, dataLoading, 
 
       <div className="page-content-section">
         <div className="container">
+
+          {photoSections.length > 1 && (
+            <div className="gallery-filter-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginBottom: '2.5rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${selectedCategory === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ borderRadius: '9999px', padding: '0.45rem 1.15rem', fontSize: '0.86rem', display: 'inline-flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}
+                onClick={() => setSelectedCategory('ALL')}
+              >
+                <Filter size={14} /> All Photos ({galleryList?.length || 0})
+              </button>
+              {photoSections.map(sec => {
+                const isSelected = selectedCategory.toLowerCase() === sec.id.toLowerCase();
+                const IconComponent = sec.icon;
+                return (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ borderRadius: '9999px', padding: '0.45rem 1.15rem', fontSize: '0.86rem', display: 'inline-flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}
+                    onClick={() => setSelectedCategory(isSelected ? 'ALL' : sec.id)}
+                  >
+                    <IconComponent size={14} /> {sec.label} ({sec.photos.length})
+                  </button>
+                );
+              })}
+            </div>
+          )}
           
           <div className="gallery-photo-sections">
-            {dataLoadFailed && galleryList.length === 0 ? <DataLoadNotice label="Gallery photos" onRetry={onRetryData} loading={dataLoading} /> : photoSections.map(section => {
-              const Icon = section.icon;
-              return (
-                <section key={section.id} className="gallery-photo-section" aria-labelledby={`gallery-section-${section.id}`}>
-                  <header className="gallery-section-heading">
-                    <div className="gallery-section-icon"><Icon size={19} aria-hidden="true" /></div>
-                    <div>
-                      <h2 id={`gallery-section-${section.id}`}>{section.label}</h2>
-                      <p>{section.description}</p>
-                    </div>
-                  </header>
+            {dataLoadFailed && (!galleryList || galleryList.length === 0) ? (
+              <DataLoadNotice label="Gallery photos" onRetry={onRetryData} loading={dataLoading} />
+            ) : visibleSections.length > 0 ? (
+              visibleSections.map(section => {
+                const Icon = section.icon;
+                return (
+                  <section key={section.id} className="gallery-photo-section" aria-labelledby={`gallery-section-${section.id}`}>
+                    <header className="gallery-section-heading">
+                      <div className="gallery-section-icon"><Icon size={19} aria-hidden="true" /></div>
+                      <div>
+                        <h2 id={`gallery-section-${section.id}`}>{section.label}</h2>
+                        <p>{section.description}</p>
+                      </div>
+                    </header>
 
-                  <div className="gallery-photo-grid">
-                    {section.photos.map(photo => (
-                      <button
-                        key={photo.id}
-                        type="button"
-                        className="gallery-photo-card"
-                        aria-label={`View photo: ${photo.title}`}
-                        onClick={() => setActiveLightboxImage(photo)}
-                      >
-                        <span className="gallery-photo-frame">
-                          <ImageWithPlaceholder
-                            src={photo.image}
-                            alt={photo.title}
-                            placeholderLabel={`${photo.title} photo`}
-                          />
-                          <span className="gallery-photo-zoom" aria-hidden="true"><ZoomIn size={17} /></span>
-                        </span>
-                        <span className="gallery-photo-caption">
-                          <strong>{photo.title}</strong>
-                          <span>{photo.subtitle}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
+                    <div className="gallery-photo-grid">
+                      {section.photos.map(photo => (
+                        <button
+                          key={photo.id}
+                          type="button"
+                          className="gallery-photo-card"
+                          aria-label={`View photo: ${photo.title}`}
+                          onClick={() => setActiveLightboxImage(photo)}
+                        >
+                          <span className="gallery-photo-frame">
+                            <ImageWithPlaceholder
+                              src={photo.image}
+                              alt={photo.title}
+                              placeholderLabel={`${photo.title} photo`}
+                            />
+                            <span className="gallery-photo-zoom" aria-hidden="true"><ZoomIn size={17} /></span>
+                          </span>
+                          <span className="gallery-photo-caption">
+                            <strong>{photo.title}</strong>
+                            <span>{photo.subtitle}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })
+            ) : (
+              <div style={{ textAlign: 'center', padding: '4rem 1rem', color: '#64748b' }}>
+                <Camera size={44} style={{ margin: '0 auto 1rem', opacity: 0.45 }} />
+                <h3 style={{ fontSize: '1.25rem', color: '#1e293b', marginBottom: '0.4rem' }}>No photos found</h3>
+                <p>There are no photos under this category yet.</p>
+              </div>
+            )}
           </div>
 
           {/* Lightbox Modal */}

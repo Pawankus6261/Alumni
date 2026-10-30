@@ -23,11 +23,15 @@ export default function RsvpModal({ event, onClose, onConfirm }) {
       `Enrollment: ${confirmedPass.enrollment || ''}`,
       `Event: ${confirmedPass.eventTitle || ''}`,
     ].join('\n');
-    createMemberIdentityQr(payload).then(qr => { if (!cancelled) setPassQr(qr); }).catch(() => {});
+    createMemberIdentityQr(payload).then(qr => { if (!cancelled) setPassQr(qr); }).catch(() => { });
     return () => { cancelled = true; };
   }, [confirmedPass]);
 
   if (!event) return null;
+
+  const isPast = event.is_past ?? (event.schedule ? new Date(event.schedule) < new Date() : false);
+  const isRegOpen = event.registration_open !== false;
+  const canRsvp = event.can_rsvp ?? (isRegOpen && !isPast);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -112,64 +116,83 @@ export default function RsvpModal({ event, onClose, onConfirm }) {
               </div>
             </div>
 
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label className="form-label">Alumnus Name <span className="req">*</span></label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Your full name"
-                  required
-                  value={alumniName}
-                  onChange={(e) => setAlumniName(e.target.value)}
-                />
+            {!canRsvp ? (
+              <div style={{ textAlign: 'center', padding: '1.5rem 0.5rem' }}>
+                <div style={{ width: 48, height: 48, borderRadius: '50%', background: isPast ? '#f1f5f9' : '#fef2f2', color: isPast ? '#64748b' : '#b91c1c', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                  <Ticket size={24} />
+                </div>
+                <h3 style={{ fontSize: '1.15rem', color: '#1e293b', marginBottom: '0.4rem' }}>
+                  {isPast ? 'This Event Has Concluded' : 'Registrations Are Closed'}
+                </h3>
+                <p style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+                  {isPast 
+                    ? 'RSVPs cannot be submitted for past events.'
+                    : 'The administrator has closed registrations for this event.'}
+                </p>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
+                  Close
+                </button>
               </div>
+            ) : (
+              <form onSubmit={handleSubmit}>
+                <div className="form-group">
+                  <label className="form-label">Alumnus Name <span className="req">*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Your full name"
+                    required
+                    value={alumniName}
+                    onChange={(e) => setAlumniName(e.target.value)}
+                  />
+                </div>
 
-              <div className="form-group">
-                <label className="form-label">Enrollment Number <span className="req">*</span></label>
-                <input
-                  type="text"
-                  className="form-input"
-                placeholder="Enter your enrollment number"
-                  style={{ fontFamily: 'var(--font-mono)' }}
-                  required
-                  value={enrollment}
-                  onChange={(e) => setEnrollment(e.target.value)}
-                />
-              </div>
+                <div className="form-group">
+                  <label className="form-label">Enrollment Number <span className="req">*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Enter your enrollment number"
+                    style={{ fontFamily: 'var(--font-mono)' }}
+                    required
+                    value={enrollment}
+                    onChange={(e) => setEnrollment(e.target.value)}
+                  />
+                </div>
 
-              <div className="form-group">
-                <label className="form-label">Email for Digital Gate Pass <span className="req">*</span></label>
-                <input
-                  type="email"
-                  className="form-input"
-                  placeholder="your.email@example.com"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
+                <div className="form-group">
+                  <label className="form-label">Email for Digital Gate Pass <span className="req">*</span></label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    placeholder="your.email@example.com"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
 
-              <div className="form-group">
-                <label className="form-label">Total Attendees (Self + Family/Guests)</label>
-                <select
-                  className="select-field"
-                  value={guests}
-                  onChange={(e) => setGuests(e.target.value)}
-                >
-                  <option value="1">1 Person (Self)</option>
-                  <option value="2">2 Persons</option>
-                  <option value="3">3 Persons</option>
-                  <option value="4">4 Persons</option>
-                </select>
-              </div>
+                <div className="form-group">
+                  <label className="form-label">Total Attendees (Self + Family/Guests)</label>
+                  <select
+                    className="select-field"
+                    value={guests}
+                    onChange={(e) => setGuests(e.target.value)}
+                  >
+                    <option value="1">1 Person (Self)</option>
+                    <option value="2">2 Persons</option>
+                    <option value="3">3 Persons</option>
+                    <option value="4">4 Persons</option>
+                  </select>
+                </div>
 
-              {submitError && <p className="admin-login-error" role="alert">{submitError}</p>}
+                {submitError && <p className="admin-login-error" role="alert">{submitError}</p>}
 
-              <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ width: '100%', marginTop: '0.5rem' }}>
-                <CheckCircle2 size={16} /> {isSubmitting ? 'Saving your RSVP…' : 'Confirm Attendance & Generate Gate Pass'}
-              </button>
-            </form>
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ width: '100%', marginTop: '0.5rem' }}>
+                  <CheckCircle2 size={16} /> {isSubmitting ? 'Saving your RSVP…' : 'Confirm Attendance & Generate Gate Pass'}
+                </button>
+              </form>
+            )}
           </>
         ) : (
           <div style={{ textAlign: 'center', padding: '1rem 0' }}>
