@@ -520,6 +520,7 @@ def list_active_members(search: str | None = None, college: str | None = None, b
         if not profile:
             profile = by_name.get(normalize_key(full_name), {})
         names = full_name.split(" ", 1)
+        avatar_val = profile_image_url(profile.get("avatar"))
         item = {
             **profile,
             "id": f"member-{entry['id']}",
@@ -530,6 +531,8 @@ def list_active_members(search: str | None = None, college: str | None = None, b
             "course": profile.get("course") or entry.get("branch") or "",
             "batch": profile.get("batch"),
             "bistaa_id": entry.get("alumni_registration_number") or "",
+            "img_url": avatar_val,
+            "avatar": avatar_val,
             "is_bistaa_member": True,
         }
         members.append(item)
@@ -764,127 +767,83 @@ def verify_alumnus_record(
     if not search_term:
         raise HTTPException(400, "Please provide an enrollment number, membership ID, or name to verify.")
 
-    clean_term = search_term.upper()
-    digits_match = re.search(r"\d+", search_term)
-    digits_id = int(digits_match.group()) if digits_match and (search_term.startswith("alum-") or search_term.startswith("member-") or search_term.isdigit()) else None
+    def normalize_key(value: Any) -> str:
+        return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
 
-    with engine.connect() as connection:
-        # 1. Search active BISTAA members
-        active = connection.execute(text("""
-            SELECT v.*, a.id AS alum_id, a.firstname, a.lastname, a.gender, a.college, a.batch,
-                   a.pos, a.connected_to, a.companyloc, a.companysector, a.avatar, a.native, a.navstate,
-                   c.course AS course_title, d.bio AS registration_bio, d.native_state AS reg_native_state
-            FROM vista_active_members v
-            LEFT JOIN alumnus_bio a ON (UPPER(a.enroll_no) = UPPER(v.enrollment_number) OR UPPER(v.alumni_registration_number) LIKE '%' || UPPER(a.enroll_no) || '%')
-            LEFT JOIN courses c ON c.id = a.course_id
-            LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
-            WHERE UPPER(v.enrollment_number) = :term
-               OR UPPER(v.alumni_registration_number) = :term
-               OR (:digits_id IS NOT NULL AND v.id = :digits_id)
-               OR UPPER(v.student_name) = :term
-            LIMIT 1
-        """), {"term": clean_term, "digits_id": digits_id}).mappings().first()
+    clean_term = normalize_key(search_term)
+    if not clean_term:
+        raise HTTPException(400, "Invalid search term.")
 
-        # 2. If not found in active members, search alumnus_bio
-        alum = None
-        if not active:
-            alum = connection.execute(text("""
-                SELECT a.*, c.course AS course_title,
-                       d.native_state AS reg_native_state, d.bio AS registration_bio,
-                       v.alumni_registration_number, v.id AS active_id
-                FROM alumnus_bio a
-                LEFT JOIN courses c ON c.id = a.course_id
-                LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
-                LEFT JOIN vista_active_members v ON UPPER(v.enrollment_number) = UPPER(a.enroll_no)
-                WHERE (a.status = 1 OR a.status = 0)
-                  AND (UPPER(a.enroll_no) = :term
-                       OR (:digits_id IS NOT NULL AND a.id = :digits_id)
-                       OR UPPER(a.firstname) = :term
-                       OR UPPER(a.lastname) = :term)
-                ORDER BY a.status DESC, a.id DESC
-                LIMIT 1
-            """), {"term": clean_term, "digits_id": digits_id}).mappings().first()
+    all_members = list_active_members()
+    matched_target = None
+    is_active_member = False
 
-        # 3. Partial / name matching fallback
-        if not active and not alum and len(clean_term) >= 3:
-            active = connection.execute(text("""
-                SELECT v.*, a.id AS alum_id, a.firstname, a.lastname, a.gender, a.college, a.batch,
-                       a.pos, a.connected_to, a.companyloc, a.companysector, a.avatar, a.native, a.navstate,
-                       c.course AS course_title, d.bio AS registration_bio, d.native_state AS reg_native_state
-                FROM vista_active_members v
-                LEFT JOIN alumnus_bio a ON UPPER(a.enroll_no) = UPPER(v.enrollment_number)
-                LEFT JOIN courses c ON c.id = a.course_id
-                LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
-                WHERE UPPER(v.student_name) LIKE :like_term
-                   OR UPPER(v.enrollment_number) LIKE :like_term
-                   OR UPPER(v.alumni_registration_number) LIKE :like_term
-                LIMIT 1
-            """), {"like_term": f"%{clean_term}%"}).mappings().first()
+    # 1. Match in active members
+    for m in all_members:
+        enr_k = normalize_key(m.get("enroll_no") or m.get("enrollment"))
+        mem_k = normalize_key(m.get("bistaa_id") or m.get("membership_id"))
+        id_k = normalize_key(m.get("id"))
+        full_name = normalize_key(f"{m.get('firstname', '')} {m.get('lastname', '')}".strip() or m.get("student_name", ""))
+        if clean_term in (enr_k, mem_k, id_k, full_name):
+            matched_target = m
+            is_active_member = True
+            break
 
-            if not active:
-                alum = connection.execute(text("""
-                    SELECT a.*, c.course AS course_title,
-                           d.native_state AS reg_native_state, d.bio AS registration_bio,
-                           v.alumni_registration_number, v.id AS active_id
-                    FROM alumnus_bio a
-                    LEFT JOIN courses c ON c.id = a.course_id
-                    LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
-                    LEFT JOIN vista_active_members v ON UPPER(v.enrollment_number) = UPPER(a.enroll_no)
-                    WHERE UPPER(a.firstname) LIKE :like_term
-                       OR UPPER(a.lastname) LIKE :like_term
-                       OR UPPER(a.enroll_no) LIKE :like_term
-                    ORDER BY a.status DESC, a.id DESC
-                    LIMIT 1
-                """), {"like_term": f"%{clean_term}%"}).mappings().first()
+    # 2. Match in alumni directory if not in active members
+    if not matched_target:
+        all_alumni = list_alumni()
+        for a in all_alumni:
+            enr_k = normalize_key(a.get("enroll_no") or a.get("enrollment"))
+            mem_k = normalize_key(a.get("bistaa_id") or a.get("membership_id"))
+            id_k = normalize_key(a.get("id"))
+            full_name = normalize_key(f"{a.get('firstname', '')} {a.get('lastname', '')}".strip())
+            if clean_term in (enr_k, mem_k, id_k, full_name):
+                matched_target = a
+                is_active_member = bool(a.get("is_bistaa_member") or a.get("bistaa_id"))
+                break
 
-    if not active and not alum:
+    # 3. Partial fallback if term is at least 4 alphanumeric chars
+    if not matched_target and len(clean_term) >= 4:
+        for m in all_members:
+            enr_k = normalize_key(m.get("enroll_no") or m.get("enrollment"))
+            full_name = normalize_key(f"{m.get('firstname', '')} {m.get('lastname', '')}".strip() or m.get("student_name", ""))
+            if clean_term in enr_k or clean_term in full_name:
+                matched_target = m
+                is_active_member = True
+                break
+        if not matched_target:
+            all_alumni = list_alumni()
+            for a in all_alumni:
+                enr_k = normalize_key(a.get("enroll_no") or a.get("enrollment"))
+                full_name = normalize_key(f"{a.get('firstname', '')} {a.get('lastname', '')}".strip())
+                if clean_term in enr_k or clean_term in full_name:
+                    matched_target = a
+                    is_active_member = bool(a.get("is_bistaa_member") or a.get("bistaa_id"))
+                    break
+
+    if not matched_target:
         return {
             "verified": False,
             "query": search_term,
             "message": "No matching verified alumni or member record was found for this identifier.",
         }
 
-    if active:
-        names = str(active.get("student_name") or "").strip().split(" ", 1)
-        first_name = active.get("firstname") or names[0]
-        last_name = active.get("lastname") or (names[1] if len(names) > 1 else "")
-        full_name = f"{first_name} {last_name}".strip()
-        enrollment_num = active.get("enrollment_number") or ""
-        membership_id_val = active.get("alumni_registration_number") or f"BISTAA-{active['id']}"
-        branch_val = active.get("course_title") or active.get("branch") or ""
-        college_val = active.get("college") or "BIST"
-        batch_val = active.get("batch")
-        avatar_val = profile_image_url(active.get("avatar"))
-        employer_val = active.get("connected_to") or ""
-        role_val = active.get("pos") or ""
-        loc_val = active.get("companyloc") or ""
-        sec_val = active.get("companysector") or ""
-        state_val = active.get("reg_native_state") or active.get("navstate") or ""
-        place_val = active.get("native") or ""
-        bio_val = active.get("registration_bio") or ""
-        is_member = True
-        verification_type = "BISTAA_LIFETIME_MEMBER"
-        badge_label = "Officially Verified BISTAA Lifetime Member"
-    else:
-        first_name = alum.get("firstname") or ""
-        last_name = alum.get("lastname") or ""
-        full_name = f"{first_name} {last_name}".strip()
-        enrollment_num = alum.get("enroll_no") or ""
-        membership_id_val = alum.get("alumni_registration_number") or ""
-        branch_val = alum.get("course_title") or ""
-        college_val = alum.get("college") or "BIST"
-        batch_val = alum.get("batch")
-        avatar_val = profile_image_url(alum.get("avatar"))
-        employer_val = alum.get("connected_to") or ""
-        role_val = alum.get("pos") or ""
-        loc_val = alum.get("companyloc") or ""
-        sec_val = alum.get("companysector") or ""
-        state_val = alum.get("reg_native_state") or alum.get("navstate") or ""
-        place_val = alum.get("native") or ""
-        bio_val = alum.get("registration_bio") or ""
-        is_member = bool(membership_id_val)
-        verification_type = "BISTAA_LIFETIME_MEMBER" if is_member else "VERIFIED_ALUMNUS"
-        badge_label = "Officially Verified BISTAA Lifetime Member" if is_member else "Officially Verified BGI Alumnus"
+    first_name = matched_target.get("firstname") or ""
+    last_name = matched_target.get("lastname") or ""
+    full_name = f"{first_name} {last_name}".strip() or matched_target.get("student_name") or matched_target.get("name") or "Alumnus"
+    enrollment_num = matched_target.get("enroll_no") or matched_target.get("enrollment") or matched_target.get("enrollment_number") or ""
+    membership_id_val = matched_target.get("bistaa_id") or matched_target.get("membership_id") or matched_target.get("alumni_registration_number") or ""
+    branch_val = matched_target.get("course") or matched_target.get("branch") or ""
+    college_val = matched_target.get("college") or "BIST"
+    batch_val = matched_target.get("batch")
+    avatar_val = matched_target.get("img_url") or profile_image_url(matched_target.get("avatar"))
+    employer_val = matched_target.get("connected_to") or matched_target.get("employer") or ""
+    role_val = matched_target.get("pos") or matched_target.get("position") or ""
+    loc_val = matched_target.get("companyloc") or matched_target.get("location") or ""
+    sec_val = matched_target.get("companysector") or matched_target.get("sector") or ""
+    state_val = matched_target.get("native_state") or matched_target.get("navstate") or ""
+    place_val = matched_target.get("native_place") or matched_target.get("native") or ""
+    bio_val = matched_target.get("bio") or ""
 
     code_seed = f"{enrollment_num}:{membership_id_val}:{full_name}".encode()
     hash_code = hashlib.sha256(code_seed).hexdigest()[:8].upper()
@@ -892,8 +851,8 @@ def verify_alumnus_record(
 
     return {
         "verified": True,
-        "verification_type": verification_type,
-        "badge_label": badge_label,
+        "verification_type": "BISTAA_LIFETIME_MEMBER" if is_active_member else "VERIFIED_ALUMNUS",
+        "badge_label": "Officially Verified BISTAA Lifetime Member" if is_active_member else "Officially Verified BGI Alumnus",
         "verification_code": verif_code,
         "verified_at": datetime.now().strftime("%d %B %Y, %I:%M %p IST"),
         "alumnus": {
@@ -921,8 +880,8 @@ def verify_alumnus_record(
             "native_place": place_val,
             "native_state": state_val,
             "bio": bio_val,
-            "is_bistaa_member": is_member,
-            "status": "ACTIVE" if is_member else "VERIFIED",
+            "is_bistaa_member": is_active_member,
+            "status": "ACTIVE" if is_active_member else "VERIFIED",
         },
         "institution": {
             "name": "Bansal Institute of Science & Technology (BIST)",

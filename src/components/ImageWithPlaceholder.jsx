@@ -9,17 +9,27 @@ export default function ImageWithPlaceholder({
   variant = 'photo',
   placeholderLabel,
 }) {
-  const hasSource = typeof src === 'string' && src.trim().length > 0;
+  const normalizedSrc = (() => {
+    if (!src || typeof src !== 'string') return '';
+    const trimmed = src.trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('/')) {
+      return trimmed;
+    }
+    return `/media/profiles/${trimmed}`;
+  })();
+
+  const hasSource = normalizedSrc.length > 0;
   const [failed, setFailed] = useState(!hasSource);
 
   useEffect(() => {
     setFailed(!hasSource);
-  }, [src, hasSource]);
+  }, [normalizedSrc, hasSource]);
 
   if (hasSource && !failed) {
     return (
       <img
-        src={src}
+        src={normalizedSrc}
         alt={alt}
         className={className}
         style={style}

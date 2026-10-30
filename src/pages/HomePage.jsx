@@ -223,7 +223,7 @@ export default function HomePage({ alumniList, membersList = [], eventsList, set
                   <div className="alumni-card-top">
                     <div className="alumni-avatar-premium" style={{ background: AVATAR_COLORS[idx % AVATAR_COLORS.length] }}>
                       <ImageWithPlaceholder
-                        src={alumni.photo}
+                        src={alumni.img_url || alumni.photo || alumni.avatar}
                         alt={`${alumni.firstname} ${alumni.lastname}`}
                         variant="avatar"
                         className="home-alumni-photo"

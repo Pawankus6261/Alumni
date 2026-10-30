@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, Download, Eye, EyeOff,
   FileImage, GraduationCap, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Search,
@@ -139,6 +139,34 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
   const [backupFiles, setBackupFiles] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [filters, setFilters] = useState({ course: '', batch: '', verification: '' });
+  const [hoveredNav, setHoveredNav] = useState(null);
+  const hoverNavTimerRef = useRef(null);
+
+  const handleNavHover = (item, event) => {
+    if (!sidebarCollapsed) return;
+    if (hoverNavTimerRef.current) clearTimeout(hoverNavTimerRef.current);
+    const rect = event.currentTarget.getBoundingClientRect();
+    hoverNavTimerRef.current = setTimeout(() => {
+      setHoveredNav({
+        id: item.id,
+        label: item.label,
+        count: item.id === 'unverified' && pending.length > 0 ? pending.length : 0,
+        top: Math.round(rect.top + rect.height / 2),
+        left: Math.round(rect.right + 12),
+      });
+    }, 2); // 2ms ultra-fast hover reveal
+  };
+
+  const handleNavLeave = () => {
+    if (hoverNavTimerRef.current) clearTimeout(hoverNavTimerRef.current);
+    setHoveredNav(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (hoverNavTimerRef.current) clearTimeout(hoverNavTimerRef.current);
+    };
+  }, []);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
   const [systemBusy, setSystemBusy] = useState(false);
@@ -765,11 +793,60 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
         <div className="admin-brand"><span className="admin-brand-mark admin-brand-logo"><img src={BGI_BHOPAL_LOGO} alt="BGI Bhopal logo" /></span><span><b>BGI ALUMENTO</b><small>ADMIN CONSOLE</small></span><button className="admin-mobile-close" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}><X size={20} /></button></div>
         <nav className="admin-side-nav" aria-label="Administration sections">
           <p className="admin-nav-label">WORKSPACE</p>
-          {visibleNav.map(item => { const Icon = item.icon; return <button key={item.id} title={sidebarCollapsed ? item.label : undefined} aria-label={item.label} className={activeSection === item.id ? 'is-active' : ''} onClick={() => { setActiveSection(item.id); setQuery(''); setMobileNavOpen(false); }}><Icon size={18} /><span>{item.label}</span>{item.id === 'unverified' && pending.length > 0 && <b className="admin-nav-count">{pending.length}</b>}</button>; })}
+          {visibleNav.map(item => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                aria-label={item.label}
+                className={`admin-nav-item-btn${activeSection === item.id ? ' is-active' : ''}`}
+                onClick={() => {
+                  setActiveSection(item.id);
+                  setQuery('');
+                  setMobileNavOpen(false);
+                  handleNavLeave();
+                }}
+                onMouseEnter={(e) => handleNavHover(item, e)}
+                onMouseLeave={handleNavLeave}
+                onFocus={(e) => handleNavHover(item, e)}
+                onBlur={handleNavLeave}
+              >
+                <Icon size={18} />
+                <span>{item.label}</span>
+                {item.id === 'unverified' && pending.length > 0 && <b className="admin-nav-count">{pending.length}</b>}
+              </button>
+            );
+          })}
         </nav>
-        <div className="admin-sidebar-bottom"><span className="admin-session-dot" /><span><b>Administrator</b><small>Secure session active</small></span><button aria-label="Sign out" title="Sign out" onClick={logout}><LogOut size={17} /></button></div>
+        <div className="admin-sidebar-bottom">
+          <span className="admin-session-dot" />
+          <span><b>Administrator</b><small>Secure session active</small></span>
+          <button
+            aria-label="Sign out"
+            onClick={logout}
+            onMouseEnter={(e) => handleNavHover({ id: 'logout', label: 'Sign out' }, e)}
+            onMouseLeave={handleNavLeave}
+            onFocus={(e) => handleNavHover({ id: 'logout', label: 'Sign out' }, e)}
+            onBlur={handleNavLeave}
+          >
+            <LogOut size={17} />
+          </button>
+        </div>
       </aside>
       {mobileNavOpen && <button className="admin-mobile-scrim" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
+      {sidebarCollapsed && hoveredNav && (
+        <div
+          className="admin-nav-hover-tooltip"
+          style={{
+            top: `${hoveredNav.top}px`,
+            left: `${hoveredNav.left}px`,
+          }}
+          role="tooltip"
+        >
+          <span>{hoveredNav.label}</span>
+          {hoveredNav.count > 0 && <b className="admin-tooltip-badge">{hoveredNav.count}</b>}
+        </div>
+      )}
       <section className="admin-main-area">
         <header className="admin-topbar"><button className="admin-mobile-menu" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu size={22} /></button><button className="admin-desktop-collapse" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={toggleSidebar}>{sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}</button><div className="admin-top-brand"><span className="admin-brand-mark admin-brand-logo"><img src={BGI_BHOPAL_LOGO} alt="BGI Bhopal logo" /></span><b>BGI ALUMENTO</b></div><div className="admin-breadcrumb"><span>Admin</span><ChevronRight size={15} /><b>{currentNav.label}</b></div><div className="admin-top-actions"><span className="admin-live-status"><i /> Local data connected</span><div className="admin-notification-wrap"><button className={`admin-refresh-icon${visibleNotifications.length ? ' has-notices' : ''}`} aria-label={`${visibleNotifications.reduce((total, item) => total + item.count, 0)} unread admin notifications`} onClick={() => setShowNotifications(value => !value)}><Bell size={17} />{visibleNotifications.length > 0 && <b>{visibleNotifications.reduce((total, item) => total + item.count, 0)}</b>}</button>{showNotifications && <div className="admin-notification-popover"><div className="admin-notification-title"><span>Notifications</span><button onClick={() => setShowNotifications(false)} aria-label="Close notifications"><X size={15} /></button></div>{visibleNotifications.length ? visibleNotifications.map(item => <div className="admin-notification-item" key={item.id}><button className="admin-notification-open" onClick={() => openNotification(item)}><span>{item.title}</span><b>{item.count}</b></button><button className="admin-notification-read" title="Mark as read" aria-label={`Mark ${item.title} as read`} onClick={() => markNotificationRead(item)}><Check size={15} /></button></div>) : <p className="admin-notifications-empty">You’re all caught up.</p>}</div>}</div><button className="admin-refresh-icon" onClick={refresh} aria-label="Refresh data" disabled={loading}><RefreshCw size={17} /></button></div></header>
         <div className="admin-page-content">{loading && <div className="admin-loading-bar" role="status">Updating records…</div>}{(contentBySection[activeSection] || renderDashboard)()}</div>

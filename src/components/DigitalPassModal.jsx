@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Printer, ShieldCheck, GraduationCap, CheckCircle, QrCode } from 'lucide-react';
 import ImageWithPlaceholder from './ImageWithPlaceholder';
 import { BGI_BHOPAL_LOGO } from '../brand';
-import { createMemberIdentityPayload, createMemberIdentityQr, QR_CREDIT } from '../utils/memberIdentityQr';
+import { createMemberIdentityPayload, createMemberIdentityQr, createMemberVerificationUrl, QR_CREDIT } from '../utils/memberIdentityQr';
 
 export default function DigitalPassModal({ passData, onClose }) {
   const [identityQr, setIdentityQr] = useState('');
@@ -206,14 +206,14 @@ export default function DigitalPassModal({ passData, onClose }) {
         {/* Modal Actions */}
         <div className="digital-pass-modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
           <a
-            href={`/verify-alum?enrollment=${encodeURIComponent(enrollment)}&membership_id=${encodeURIComponent(officialMembershipId)}`}
+            href={createMemberVerificationUrl({ ...passData, membership_id: officialMembershipId || memberIdentifier, enrollment: enrollment })}
             className="btn btn-secondary"
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
             onClick={(e) => {
               e.preventDefault();
               onClose();
               if (typeof window !== 'undefined') {
-                const targetUrl = `/verify-alum?enrollment=${encodeURIComponent(enrollment)}&membership_id=${encodeURIComponent(officialMembershipId)}`;
+                const targetUrl = createMemberVerificationUrl({ ...passData, membership_id: officialMembershipId || memberIdentifier, enrollment: enrollment });
                 window.history.pushState({}, '', targetUrl);
                 window.dispatchEvent(new PopStateEvent('popstate'));
               }

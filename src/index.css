@@ -5088,12 +5088,69 @@ main > div { width: 100%; max-width: 100%; min-width: 0; }
   .admin-sidebar-collapsed .admin-brand > span:nth-child(2),
   .admin-sidebar-collapsed .admin-nav-label,
   .admin-sidebar-collapsed .admin-side-nav button > span,
-  .admin-sidebar-collapsed .admin-sidebar-bottom > span:nth-child(2) { display: none; }
+  .admin-sidebar-collapsed .admin-sidebar-bottom > span:nth-child(2) { display: none !important; }
   .admin-sidebar-collapsed .admin-side-nav { padding-inline: 10px; }
   .admin-sidebar-collapsed .admin-side-nav button { position: relative; justify-content: center; padding-inline: 0; }
   .admin-sidebar-collapsed .admin-nav-count { position: absolute; top: 3px; right: 3px; transform: none; margin: 0; padding: 1px 5px; font-size: .58rem; }
   .admin-sidebar-collapsed .admin-sidebar-bottom { justify-content: center; margin-inline: 9px; padding-inline: 0; }
   .admin-sidebar-collapsed .admin-sidebar-bottom button { flex: 0 0 auto; }
+}
+
+/* 2ms Ultra-fast Floating Tooltip for Side Nav Items */
+.admin-nav-hover-tooltip {
+  position: fixed;
+  z-index: 999999;
+  width: max-content !important;
+  max-width: 280px;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translateY(-50%);
+  background: #102b4a;
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-shadow: 0 4px 16px rgba(0, 15, 35, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  pointer-events: none;
+  animation: adminTooltipPop 2ms ease-out forwards;
+}
+
+@keyframes adminTooltipPop {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+.admin-nav-hover-tooltip::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: #102b4a;
+}
+
+.admin-tooltip-badge {
+  background: #fcd34d;
+  color: #92400e;
+  padding: 1px 6px;
+  border-radius: 99px;
+  font-size: 0.65rem;
+  font-weight: 800;
 }
 .admin-login-page { --admin-navy: #17365b; position: relative; isolation: isolate; width: 100%; min-height: 100dvh; flex: 1 0 auto; display: grid; place-items: center; overflow: hidden; padding: 36px 18px; background: radial-gradient(ellipse at 17% 18%, #e6edf6 0, transparent 38%), linear-gradient(145deg, #f4f7fb 0%, #eaf0f7 100%); }
 .admin-login-credit { position: absolute; right: 16px; bottom: 18px; left: 16px; margin: 0; color: #7d8b9d; font-size: .76rem; text-align: center; }
