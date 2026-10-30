@@ -21,7 +21,7 @@ const INDIAN_STATES = [
   "Himachal Pradesh", "Kerala", "Assam", "Goa", "Other State / Union Territory"
 ];
 
-export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
+export default function RegisterPage({ onAddAlumnus, onBecomeBistaa, setView, showToast }) {
   const [formData, setFormData] = useState({
     firstname: '',
     lastname: '',
@@ -79,7 +79,16 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
       try {
         confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
       } catch (e) {}
-      setSubmission({ name: `${formData.firstname} ${formData.lastname}`.trim(), reference: result?.id || '' });
+      setSubmission({
+        name: `${formData.firstname} ${formData.lastname}`.trim(),
+        reference: result?.id || '',
+        membershipPrefill: {
+          enrollment: cleanEnroll,
+          name: `${formData.firstname} ${formData.lastname}`.trim(),
+          branch: formData.course,
+          college: formData.college,
+        },
+      });
     } catch (error) {
       showToast(error.message || 'Registration could not be saved. Please try again.', 'error');
     } finally {
@@ -383,10 +392,12 @@ export default function RegisterPage({ onAddAlumnus, setView, showToast }) {
       {submission && <SubmissionSuccessModal
         eyebrow="PROFILE SUBMITTED"
         title={`Thanks, ${submission.name.split(' ')[0]}!`}
-        message="Your alumni profile has been received and is awaiting institutional verification. It will appear in the directory once approved."
+        message="Your alumni profile has been received and is awaiting institutional verification. Continue to BISTAA and we’ll prefill your name, enrollment, college, and branch. Membership activation follows payment and administrator review."
         reference={submission.reference}
-        actionLabel="Explore the directory"
-        onAction={() => setView('directory')}
+        actionLabel="Become a BISTAA member"
+        onAction={() => onBecomeBistaa(submission.membershipPrefill)}
+        secondaryActionLabel="Explore the directory"
+        onSecondaryAction={() => setView('directory')}
       />}
     </div>
   );

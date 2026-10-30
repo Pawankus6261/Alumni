@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { id: 'events', label: 'Events' },
   { id: 'gallery', label: 'Gallery' },
   { id: 'status', label: 'Status' },
+  { id: 'verify', label: 'Verify' },
 ];
 
 export default function Navbar({ currentView, setView }) {

@@ -68,7 +68,8 @@ _backup_worker_started = False
 origins = [value.strip() for value in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if value.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=origins if "*" not in origins else ["*"],
+    allow_origin_regex=r"^https?://([a-zA-Z0-9-]+\.)*(ngrok-free\.(app|dev)|ngrok\.io|localhost)(:[0-9]+)?$",
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
@@ -744,6 +745,193 @@ def view_bistaa_slip(application_id: int, expires: int, signature: str):
     if not path.is_file():
         raise HTTPException(404, "The payment slip file is unavailable.")
     return FileResponse(path, media_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+
+
+@app.get("/api/verify")
+@app.get("/api/verify/{identifier}")
+def verify_alumnus_record(
+    identifier: str | None = None,
+    query: str | None = Query(default=None),
+    enrollment: str | None = Query(default=None),
+    membership_id: str | None = Query(default=None),
+    id: str | None = Query(default=None),
+):
+    """
+    Public verification endpoint to verify an alumnus or BISTAA member credential
+    via QR code scan or direct query.
+    """
+    search_term = (identifier or query or enrollment or membership_id or id or "").strip()
+    if not search_term:
+        raise HTTPException(400, "Please provide an enrollment number, membership ID, or name to verify.")
+
+    clean_term = search_term.upper()
+    digits_match = re.search(r"\d+", search_term)
+    digits_id = int(digits_match.group()) if digits_match and (search_term.startswith("alum-") or search_term.startswith("member-") or search_term.isdigit()) else None
+
+    with engine.connect() as connection:
+        # 1. Search active BISTAA members
+        active = connection.execute(text("""
+            SELECT v.*, a.id AS alum_id, a.firstname, a.lastname, a.gender, a.college, a.batch,
+                   a.pos, a.connected_to, a.companyloc, a.companysector, a.avatar, a.native, a.navstate,
+                   c.course AS course_title, d.bio AS registration_bio, d.native_state AS reg_native_state
+            FROM vista_active_members v
+            LEFT JOIN alumnus_bio a ON (UPPER(a.enroll_no) = UPPER(v.enrollment_number) OR UPPER(v.alumni_registration_number) LIKE '%' || UPPER(a.enroll_no) || '%')
+            LEFT JOIN courses c ON c.id = a.course_id
+            LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
+            WHERE UPPER(v.enrollment_number) = :term
+               OR UPPER(v.alumni_registration_number) = :term
+               OR (:digits_id IS NOT NULL AND v.id = :digits_id)
+               OR UPPER(v.student_name) = :term
+            LIMIT 1
+        """), {"term": clean_term, "digits_id": digits_id}).mappings().first()
+
+        # 2. If not found in active members, search alumnus_bio
+        alum = None
+        if not active:
+            alum = connection.execute(text("""
+                SELECT a.*, c.course AS course_title,
+                       d.native_state AS reg_native_state, d.bio AS registration_bio,
+                       v.alumni_registration_number, v.id AS active_id
+                FROM alumnus_bio a
+                LEFT JOIN courses c ON c.id = a.course_id
+                LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
+                LEFT JOIN vista_active_members v ON UPPER(v.enrollment_number) = UPPER(a.enroll_no)
+                WHERE (a.status = 1 OR a.status = 0)
+                  AND (UPPER(a.enroll_no) = :term
+                       OR (:digits_id IS NOT NULL AND a.id = :digits_id)
+                       OR UPPER(a.firstname) = :term
+                       OR UPPER(a.lastname) = :term)
+                ORDER BY a.status DESC, a.id DESC
+                LIMIT 1
+            """), {"term": clean_term, "digits_id": digits_id}).mappings().first()
+
+        # 3. Partial / name matching fallback
+        if not active and not alum and len(clean_term) >= 3:
+            active = connection.execute(text("""
+                SELECT v.*, a.id AS alum_id, a.firstname, a.lastname, a.gender, a.college, a.batch,
+                       a.pos, a.connected_to, a.companyloc, a.companysector, a.avatar, a.native, a.navstate,
+                       c.course AS course_title, d.bio AS registration_bio, d.native_state AS reg_native_state
+                FROM vista_active_members v
+                LEFT JOIN alumnus_bio a ON UPPER(a.enroll_no) = UPPER(v.enrollment_number)
+                LEFT JOIN courses c ON c.id = a.course_id
+                LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
+                WHERE UPPER(v.student_name) LIKE :like_term
+                   OR UPPER(v.enrollment_number) LIKE :like_term
+                   OR UPPER(v.alumni_registration_number) LIKE :like_term
+                LIMIT 1
+            """), {"like_term": f"%{clean_term}%"}).mappings().first()
+
+            if not active:
+                alum = connection.execute(text("""
+                    SELECT a.*, c.course AS course_title,
+                           d.native_state AS reg_native_state, d.bio AS registration_bio,
+                           v.alumni_registration_number, v.id AS active_id
+                    FROM alumnus_bio a
+                    LEFT JOIN courses c ON c.id = a.course_id
+                    LEFT JOIN alumni_registration_details d ON d.alumnus_id = a.id
+                    LEFT JOIN vista_active_members v ON UPPER(v.enrollment_number) = UPPER(a.enroll_no)
+                    WHERE UPPER(a.firstname) LIKE :like_term
+                       OR UPPER(a.lastname) LIKE :like_term
+                       OR UPPER(a.enroll_no) LIKE :like_term
+                    ORDER BY a.status DESC, a.id DESC
+                    LIMIT 1
+                """), {"like_term": f"%{clean_term}%"}).mappings().first()
+
+    if not active and not alum:
+        return {
+            "verified": False,
+            "query": search_term,
+            "message": "No matching verified alumni or member record was found for this identifier.",
+        }
+
+    if active:
+        names = str(active.get("student_name") or "").strip().split(" ", 1)
+        first_name = active.get("firstname") or names[0]
+        last_name = active.get("lastname") or (names[1] if len(names) > 1 else "")
+        full_name = f"{first_name} {last_name}".strip()
+        enrollment_num = active.get("enrollment_number") or ""
+        membership_id_val = active.get("alumni_registration_number") or f"BISTAA-{active['id']}"
+        branch_val = active.get("course_title") or active.get("branch") or ""
+        college_val = active.get("college") or "BIST"
+        batch_val = active.get("batch")
+        avatar_val = profile_image_url(active.get("avatar"))
+        employer_val = active.get("connected_to") or ""
+        role_val = active.get("pos") or ""
+        loc_val = active.get("companyloc") or ""
+        sec_val = active.get("companysector") or ""
+        state_val = active.get("reg_native_state") or active.get("navstate") or ""
+        place_val = active.get("native") or ""
+        bio_val = active.get("registration_bio") or ""
+        is_member = True
+        verification_type = "BISTAA_LIFETIME_MEMBER"
+        badge_label = "Officially Verified BISTAA Lifetime Member"
+    else:
+        first_name = alum.get("firstname") or ""
+        last_name = alum.get("lastname") or ""
+        full_name = f"{first_name} {last_name}".strip()
+        enrollment_num = alum.get("enroll_no") or ""
+        membership_id_val = alum.get("alumni_registration_number") or ""
+        branch_val = alum.get("course_title") or ""
+        college_val = alum.get("college") or "BIST"
+        batch_val = alum.get("batch")
+        avatar_val = profile_image_url(alum.get("avatar"))
+        employer_val = alum.get("connected_to") or ""
+        role_val = alum.get("pos") or ""
+        loc_val = alum.get("companyloc") or ""
+        sec_val = alum.get("companysector") or ""
+        state_val = alum.get("reg_native_state") or alum.get("navstate") or ""
+        place_val = alum.get("native") or ""
+        bio_val = alum.get("registration_bio") or ""
+        is_member = bool(membership_id_val)
+        verification_type = "BISTAA_LIFETIME_MEMBER" if is_member else "VERIFIED_ALUMNUS"
+        badge_label = "Officially Verified BISTAA Lifetime Member" if is_member else "Officially Verified BGI Alumnus"
+
+    code_seed = f"{enrollment_num}:{membership_id_val}:{full_name}".encode()
+    hash_code = hashlib.sha256(code_seed).hexdigest()[:8].upper()
+    verif_code = f"BGI-VRF-{hash_code}"
+
+    return {
+        "verified": True,
+        "verification_type": verification_type,
+        "badge_label": badge_label,
+        "verification_code": verif_code,
+        "verified_at": datetime.now().strftime("%d %B %Y, %I:%M %p IST"),
+        "alumnus": {
+            "name": full_name,
+            "firstname": first_name,
+            "lastname": last_name,
+            "enrollment": enrollment_num,
+            "enroll_no": enrollment_num,
+            "membership_id": membership_id_val,
+            "bistaa_id": membership_id_val,
+            "college": college_val,
+            "course": branch_val,
+            "branch": branch_val,
+            "batch": batch_val,
+            "employer": employer_val,
+            "connected_to": employer_val,
+            "position": role_val,
+            "pos": role_val,
+            "location": loc_val,
+            "companyloc": loc_val,
+            "sector": sec_val,
+            "companysector": sec_val,
+            "img_url": avatar_val,
+            "avatar": avatar_val,
+            "native_place": place_val,
+            "native_state": state_val,
+            "bio": bio_val,
+            "is_bistaa_member": is_member,
+            "status": "ACTIVE" if is_member else "VERIFIED",
+        },
+        "institution": {
+            "name": "Bansal Institute of Science & Technology (BIST)",
+            "group": "Bansal Group of Institutions (BGI), Bhopal",
+            "council": "BIST Alumni Association (BISTAA) Executive Council",
+            "affiliations": "AICTE Approved • NAAC Accredited • Affiliated to RGPV & Barkatullah University",
+            "campus": "Kokta, Anand Nagar, Bhopal, Madhya Pradesh 462021",
+        }
+    }
 
 
 @app.post("/api/events/{event_id}/rsvp", status_code=201)
@@ -1507,3 +1695,4 @@ def admin_slip(application_id: int, username: str = Depends(require_admin)):
     if not path.is_file():
         raise HTTPException(404, "The payment slip file is unavailable.")
     return FileResponse(path, media_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+

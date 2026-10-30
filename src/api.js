@@ -78,6 +78,55 @@ export const getGallery = () => cachedPublicGet('/gallery');
 export const getCourses = () => apiRequest('/courses');
 export const getBistaaStatus = (query) => apiRequest(`/bistaa/status?query=${encodeURIComponent(query)}`);
 
+export async function verifyAlumnus(query) {
+  try {
+    return await apiRequest(`/verify?query=${encodeURIComponent(query)}`);
+  } catch (error) {
+    const bootstrap = getCachedPublicBootstrap();
+    if (bootstrap) {
+      const q = String(query || '').trim().toLowerCase();
+      const allAlumni = [...(bootstrap.members || []), ...(bootstrap.alumni || [])];
+      const match = allAlumni.find(a =>
+        String(a.enroll_no || a.enrollment || '').toLowerCase() === q ||
+        String(a.bistaa_id || a.membership_id || '').toLowerCase() === q ||
+        String(a.id || '').toLowerCase() === q ||
+        `${a.firstname || ''} ${a.lastname || ''}`.toLowerCase().includes(q)
+      );
+      if (match) {
+        const isMember = Boolean(match.is_bistaa_member || match.bistaa_id);
+        const name = `${match.firstname || ''} ${match.lastname || ''}`.trim();
+        return {
+          verified: true,
+          verification_type: isMember ? 'BISTAA_LIFETIME_MEMBER' : 'VERIFIED_ALUMNUS',
+          badge_label: isMember ? 'Officially Verified BISTAA Lifetime Member' : 'Officially Verified BGI Alumnus',
+          verification_code: `BGI-VRF-${Date.now().toString(16).slice(-6).toUpperCase()}`,
+          verified_at: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
+          alumnus: {
+            ...match,
+            name,
+            enrollment: match.enroll_no || match.enrollment || '',
+            membership_id: match.bistaa_id || match.membership_id || '',
+            course: match.course || match.branch || '',
+            branch: match.course || match.branch || '',
+            employer: match.connected_to || '',
+            position: match.pos || '',
+            location: match.companyloc || '',
+            sector: match.companysector || '',
+          },
+          institution: {
+            name: 'Bansal Institute of Science & Technology (BIST)',
+            group: 'Bansal Group of Institutions (BGI), Bhopal',
+            council: 'BIST Alumni Association (BISTAA) Executive Council',
+            affiliations: 'AICTE Approved • NAAC Accredited • Affiliated to RGPV & Barkatullah University',
+            campus: 'Kokta, Anand Nagar, Bhopal, Madhya Pradesh 462021',
+          }
+        };
+      }
+    }
+    throw error;
+  }
+}
+
 export function submitRegistration(data, avatarFile) {
   const form = new FormData();
   [

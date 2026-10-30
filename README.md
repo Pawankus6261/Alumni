@@ -38,6 +38,7 @@ The website expects the API to be available. It displays section-level loading a
 - **Home** — institutional introduction, campus imagery, 25-year legacy, selected alumni profiles, and directory entry points.
 - **Alumni directory** — search and browse alumni profiles, with available graduation, course, employer, location, and profile-photo information.
 - **BISTAA members** — browse current lifetime members and their linked alumni information; member identity passes include unique QR codes.
+- **QR Verification (`/verify-alum`)** — instant online verification of alumni credentials and BISTAA lifetime membership passes; scanning the QR code on a member pass or card automatically routes to `/verify-alum?enrollment=...` to display the verified alumni dossier with credentials, course, batch, professional details, and printable certificate.
 - **BISTAA registration** — submit a lifetime-membership application, UPI transaction reference, and payment-slip image for administrator review.
 - **Standard registration** — submit an alumni profile for verification; enrollment number and profile image may be omitted.
 - **Status lookup** — look up an application using its enrollment number or transaction reference and view the resulting status or membership pass when available.
@@ -169,6 +170,17 @@ npm run dev
 The site opens at [http://localhost:3000](http://localhost:3000). During development, Vite proxies `/api`, `/media/profiles`, and `/media/gallery` to `http://127.0.0.1:8000`.
 
 Optional frontend configuration can be copied from `.env.example` to `.env`. For a separately hosted API, set `VITE_API_URL` to its public API base URL and configure the backend's `CORS_ORIGINS` with the exact frontend origin.
+
+### 4. Share publicly with ngrok
+
+To share your local application with external users, phones, or over the internet:
+
+```bash
+npm run tunnel
+# or: npx ngrok http 3000
+```
+
+`vite.config.js` is pre-configured with `host: true` and `allowedHosts: true`, and the FastAPI backend accepts ngrok tunnel origins, so your public link (`https://<your-subdomain>.ngrok-free.app`) works instantly without host or CORS blocking. Scanning a member's QR code on any phone will open `/verify-alum` directly over your ngrok tunnel!
 
 ### Admin login
 

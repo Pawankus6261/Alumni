@@ -4619,7 +4619,9 @@ main > div { width: 100%; max-width: 100%; min-width: 0; }
 .submission-success-message { max-width: 43ch; margin: 12px 0 0; color: #65758a; font-size: .88rem; line-height: 1.65; }
 .submission-success-reference { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px; padding: 11px 13px; border: 1px solid #e3eaf2; border-radius: 9px; color: #718096; background: #f8fafc; font-size: .7rem; }
 .submission-success-reference strong { overflow-wrap: anywhere; color: #17365b; font-family: var(--font-mono); font-size: .78rem; }
-.submission-success-action { width: 100%; min-height: 47px; justify-content: center; margin-top: 20px; border-radius: 10px; font-size: .8rem; }
+.submission-success-actions { width: 100%; display: grid; gap: .65rem; margin-top: 20px; }
+.submission-success-action { width: 100%; min-height: 47px; justify-content: center; border-radius: 10px; font-size: .8rem; }
+.submission-success-secondary { margin-top: 0; }
 .submission-success-dialog > small { margin-top: 14px; color: #8a97a6; font-size: .66rem; }
 .rsvp-success-label { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 10px; padding: 6px 10px; border: 1px solid #ccebd8; border-radius: 999px; color: #13764a; background: #effaf3; font-size: .65rem; font-weight: 850; letter-spacing: .06em; }
 @keyframes submission-backdrop-in { from { opacity: 0; } to { opacity: 1; } }

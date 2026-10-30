@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import ImageUploadField from '../components/ImageUploadField';
 import DataLoadNotice from '../components/DataLoadNotice';
@@ -15,11 +15,11 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showToast, dataLoadFailed, dataLoading, onRetryData }) {
-  const [enrollment, setEnrollment] = useState('');
-  const [name, setName] = useState('');
-  const [branch, setBranch] = useState('');
-  const [college, setCollege] = useState('BIST');
+export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showToast, dataLoadFailed, dataLoading, onRetryData, prefillData, onConsumePrefill }) {
+  const [enrollment, setEnrollment] = useState(() => prefillData?.enrollment?.trim().toUpperCase() || '');
+  const [name, setName] = useState(() => prefillData?.name || '');
+  const [branch, setBranch] = useState(() => prefillData?.branch || '');
+  const [college, setCollege] = useState(() => prefillData?.college || 'BIST');
   const [utr, setUtr] = useState('');
   const [slipFile, setSlipFile] = useState(null);
   const [slipPreviewUrl, setSlipPreviewUrl] = useState(null);
@@ -27,6 +27,10 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submission, setSubmission] = useState(null);
+
+  useEffect(() => {
+    if (prefillData) onConsumePrefill?.();
+  }, []);
 
   // Autocomplete logic
   const handleEnrollmentChange = (val) => {

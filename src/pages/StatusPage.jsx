@@ -295,13 +295,26 @@ export default function StatusPage({ onOpenSlip, onOpenDigitalPass, setView, ini
                 {/* Digital Pass Preview Card if Approved */}
                 {isApproved && (
                   <div style={{ marginTop: '2rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <h4 style={{ fontSize: '1.1rem', color: 'var(--bgi-navy-900)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <h4 style={{ fontSize: '1.1rem', color: 'var(--bgi-navy-900)', margin: 0 }}>
                         Official BISTAA Lifetime Identity Pass
                       </h4>
-                      <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>
-                        <Printer size={15} /> Print Physical Card
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            if (setView) {
+                              setView('verify', `?enrollment=${encodeURIComponent(searchedRecord.enrollment)}&membership_id=${encodeURIComponent(searchedRecord.membership_id || '')}`);
+                            }
+                          }}
+                        >
+                          <ShieldCheck size={14} /> View /verify-alum
+                        </button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>
+                          <Printer size={15} /> Print Physical Card
+                        </button>
+                      </div>
                     </div>
 
                     <div className="digital-id-pass" style={{
@@ -391,7 +404,14 @@ export default function StatusPage({ onOpenSlip, onOpenDigitalPass, setView, ini
                         </div>
 
                         <div className="pass-qr-box" style={{ textAlign: 'center' }}>
-                          {memberIdentityQr ? <img src={memberIdentityQr} alt={`Unique identity QR for ${searchedRecord.membership_id}`} style={{ display: 'block', boxSizing: 'border-box', width: 128, height: 128, minWidth: 128, aspectRatio: '1 / 1', objectFit: 'contain', border: '1px solid #cbd5e1', borderRadius: '6px', imageRendering: 'pixelated' }} /> : <div style={{ boxSizing: 'border-box', width: 128, height: 128, minWidth: 128, aspectRatio: '1 / 1', display: 'grid', placeItems: 'center', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#64748b', fontSize: 10 }}>Preparing QR…</div>}
+                          {memberIdentityQr ? (
+                            <>
+                              <img src={memberIdentityQr} alt={`Unique identity QR for ${searchedRecord.membership_id}`} style={{ display: 'block', boxSizing: 'border-box', width: 128, height: 128, minWidth: 128, aspectRatio: '1 / 1', objectFit: 'contain', border: '1px solid #cbd5e1', borderRadius: '6px', imageRendering: 'pixelated' }} />
+                              <div style={{ fontSize: '0.625rem', color: '#64748b', marginTop: 4, maxWidth: 128 }}>Scan QR to open <b>/verify-alum</b></div>
+                            </>
+                          ) : (
+                            <div style={{ boxSizing: 'border-box', width: 128, height: 128, minWidth: 128, aspectRatio: '1 / 1', display: 'grid', placeItems: 'center', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#64748b', fontSize: 10 }}>Preparing QR…</div>
+                          )}
                         </div>
                       </div>
 
