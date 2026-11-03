@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/alumni.sqlite3:/app/alumni.sqlite3
+      - ./backend/profile_images:/app/profile_images
+      - ./backend/gallery_images:/app/gallery_images
+      - ./backend/private_uploads:/app/private_uploads
+      - ./backend/backups:/app/backups
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+

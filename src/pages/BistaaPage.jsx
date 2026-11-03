@@ -324,7 +324,7 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
               {/* Visual QR Frame */}
               <div className="qr-frame">
                 <ImageWithPlaceholder
-                  src="assets/bistaa_qr.jpg"
+                  src="assets/PaymentQR.png"
                   alt="BISTAA UPI payment QR code"
                   variant="compact"
                   placeholderLabel="Payment QR unavailable"

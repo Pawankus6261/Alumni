@@ -1,0 +1,23 @@
+# Systemd service unit for BGI Alumento FastAPI Backend
+# Place in /etc/systemd/system/alumni-backend.service
+# Enable & start with:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable alumni-backend
+#   sudo systemctl start alumni-backend
+
+[Unit]
+Description=BGI Alumento FastAPI Production Backend
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/var/www/alumni/backend
+EnvironmentFile=/var/www/alumni/backend/.env
+ExecStart=/var/www/alumni/backend/venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8000 --workers 4
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

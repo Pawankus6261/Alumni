@@ -22,11 +22,19 @@ from typing import Any
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+from s3_storage import (
+    is_s3_enabled,
+    upload_file_to_s3,
+    get_public_s3_url,
+    get_presigned_url,
+    delete_file_from_s3,
+)
 
 BACKEND_DIR = Path(__file__).resolve().parent
 load_dotenv(BACKEND_DIR / ".env")
@@ -75,11 +83,19 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+class CachedStaticFiles(StaticFiles):
+    """StaticFiles with aggressive browser Cache-Control headers for instant local loading."""
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "public, max-age=2592000, immutable"
+        return resp
+
+
 PROFILE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 GALLERY_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/media/profiles", StaticFiles(directory=PROFILE_IMAGE_DIR), name="profiles")
-app.mount("/media/gallery", StaticFiles(directory=GALLERY_IMAGE_DIR), name="gallery")
+app.mount("/media/profiles", CachedStaticFiles(directory=PROFILE_IMAGE_DIR), name="profiles")
+app.mount("/media/gallery", CachedStaticFiles(directory=GALLERY_IMAGE_DIR), name="gallery")
 
 
 class ReviewRequest(BaseModel):
@@ -368,7 +384,7 @@ def audit(actor: str, action: str, entity_type: str, entity_id: Any = None, deta
         })
 
 
-def persist_upload(upload: UploadFile | None, destination: Path) -> str | None:
+def persist_upload(upload: UploadFile | None, destination: Path, s3_folder: str = "profiles", is_public: bool = True) -> str | None:
     if upload is None or not upload.filename:
         return None
     suffix = ALLOWED_IMAGE_TYPES.get(upload.content_type or "")
@@ -380,8 +396,49 @@ def persist_upload(upload: UploadFile | None, destination: Path) -> str | None:
     if not content:
         raise HTTPException(status_code=400, detail="The uploaded image is empty.")
     filename = f"{uuid.uuid4().hex}{suffix}"
-    destination.mkdir(parents=True, exist_ok=True)
-    (destination / filename).write_bytes(content)
+
+    # Automatically optimize and compress image to keep size tiny and loading fast
+    max_dims = (400, 400) if s3_folder == "profiles" else ((1600, 1200) if s3_folder == "gallery" else (1600, 1600))
+    optimized_content = content
+    try:
+        from PIL import Image as PILImage, ImageOps
+        with PILImage.open(io.BytesIO(content)) as img:
+            try:
+                img = ImageOps.exif_transpose(img)
+            except Exception:
+                pass
+            img.thumbnail(max_dims, PILImage.Resampling.LANCZOS)
+            buf = io.BytesIO()
+            if suffix in (".png", ".webp"):
+                is_transparent = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+                if is_transparent:
+                    img.save(buf, format="PNG", optimize=True)
+                else:
+                    img.convert("RGB").save(buf, format="JPEG", quality=85, optimize=True)
+            else:
+                img.convert("RGB").save(buf, format="JPEG", quality=85, optimize=True)
+            candidate = buf.getvalue()
+            if len(candidate) < len(content):
+                optimized_content = candidate
+    except Exception:
+        optimized_content = content
+
+    # If AWS S3 is enabled, upload to S3 bucket
+    if is_s3_enabled():
+        upload_file_to_s3(
+            content=optimized_content,
+            filename=filename,
+            folder=s3_folder,
+            content_type=upload.content_type,
+            is_public=is_public,
+        )
+
+    # Always write to local destination as local cache/fallback
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / filename).write_bytes(optimized_content)
+    except OSError:
+        pass
     return filename
 
 
@@ -391,6 +448,8 @@ def profile_image_url(value: Any) -> str | None:
         return None
     if image.startswith(("http://", "https://", "/")):
         return image
+    if is_s3_enabled():
+        return get_public_s3_url("profiles", image)
     return f"/media/profiles/{Path(image).name}"
 
 
@@ -693,7 +752,7 @@ def submit_bistaa_application(
     utr = upi_transaction_id.strip()
     if not re.fullmatch(r"\d{12}", utr):
         raise HTTPException(422, "UPI transaction ID must be exactly 12 digits.")
-    slip_name = persist_upload(transaction_slip, UPLOAD_DIR)
+    slip_name = persist_upload(transaction_slip, UPLOAD_DIR, s3_folder="slips", is_public=False)
     if not slip_name:
         raise HTTPException(400, "Payment slip is required.")
     with engine.begin() as connection:
@@ -766,7 +825,12 @@ def view_bistaa_slip(application_id: int, expires: int, signature: str):
         row = connection.execute(text("SELECT transaction_slip FROM bistaa_submissions WHERE id=:id"), {"id": application_id}).mappings().first()
     if not row or not row["transaction_slip"]:
         raise HTTPException(404, "Payment slip not found.")
-    path = UPLOAD_DIR / Path(row["transaction_slip"]).name
+    slip_filename = Path(row["transaction_slip"]).name
+    if is_s3_enabled():
+        presigned = get_presigned_url("slips", slip_filename, expires_in=600)
+        if presigned:
+            return RedirectResponse(url=presigned, status_code=307)
+    path = UPLOAD_DIR / slip_filename
     if not path.is_file():
         raise HTTPException(404, "The payment slip file is unavailable.")
     return FileResponse(path, media_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream")
@@ -1319,8 +1383,8 @@ def create_gallery_item(title: str = Form(...), category: str = Form("Campus Lif
                         username: str = Depends(require_roles("content_manager"))):
     if len(title.strip()) < 2 or len(title) > 200 or len(category) > 100 or len(description) > 1000:
         raise HTTPException(422, "Check the gallery title, category, and description lengths.")
-    filename = persist_upload(image, GALLERY_IMAGE_DIR)
-    image_path = f"/media/gallery/{filename}"
+    filename = persist_upload(image, GALLERY_IMAGE_DIR, s3_folder="gallery", is_public=True)
+    image_path = get_public_s3_url("gallery", filename) if is_s3_enabled() else f"/media/gallery/{filename}"
     with engine.begin() as connection:
         result = connection.execute(text("INSERT INTO managed_gallery (title, category, description, image_path) VALUES (:title, :category, :description, :image)"), {
             "title": title.strip(), "category": category.strip() or "Campus Life", "description": description.strip(), "image": image_path,
@@ -1348,6 +1412,8 @@ def delete_gallery_item(gallery_id: str, username: str = Depends(require_roles("
         row = connection.execute(text("SELECT image_path FROM managed_gallery WHERE id=:id"), {"id": clean_id}).mappings().first()
         if row:
             connection.execute(text("DELETE FROM managed_gallery WHERE id=:id"), {"id": clean_id})
+            if is_s3_enabled():
+                delete_file_from_s3("gallery", Path(row["image_path"]).name)
             image_file = (GALLERY_IMAGE_DIR / Path(row["image_path"]).name).resolve()
             if image_file.parent == GALLERY_IMAGE_DIR and image_file.is_file():
                 try:
@@ -1779,7 +1845,12 @@ def admin_slip(application_id: int, username: str = Depends(require_admin)):
         row = connection.execute(text("SELECT transaction_slip FROM bistaa_submissions WHERE id=:id"), {"id": application_id}).mappings().first()
     if not row or not row["transaction_slip"]:
         raise HTTPException(404, "Payment slip not found.")
-    path = UPLOAD_DIR / Path(row["transaction_slip"]).name
+    slip_filename = Path(row["transaction_slip"]).name
+    if is_s3_enabled():
+        presigned = get_presigned_url("slips", slip_filename, expires_in=600)
+        if presigned:
+            return RedirectResponse(url=presigned, status_code=307)
+    path = UPLOAD_DIR / slip_filename
     if not path.is_file():
         raise HTTPException(404, "The payment slip file is unavailable.")
     return FileResponse(path, media_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream")
