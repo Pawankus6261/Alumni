@@ -21,39 +21,23 @@ export async function createMemberIdentityQr(payload) {
 }
 
 /**
- * Builds the canonical public verification URL for an alumnus/member.
- * When scanned by any smartphone camera or QR scanner app, it opens /verify-alum
- * with that member's credentials and shows their full verified profile.
+ * Builds the canonical public status & pass URL for an alumnus/member.
+ * When scanned by any smartphone camera or QR scanner app, it opens /status
+ * with that member's credentials and shows their official digital pass.
  */
 export function createMemberVerificationUrl(member = {}) {
   const origin = typeof window !== 'undefined' && window.location?.origin
     ? window.location.origin
     : '';
 
-  const params = new URLSearchParams();
-  const enrollment = String(member.enrollment || member.enroll_no || '').trim();
-  const memberId = String(member.membership_id || member.bistaa_id || '').trim();
-  const id = String(member.id || '').trim();
-  const name = String(member.name || [member.firstname, member.lastname].filter(Boolean).join(' ') || '').trim();
-  const college = String(member.college || '').trim();
-  const branch = String(member.branch || member.course || '').trim();
-  const batch = String(member.batch || '').trim();
-
-  if (enrollment) params.set('enrollment', enrollment);
-  if (memberId) params.set('membership_id', memberId);
-  if (id && !enrollment && !memberId) params.set('id', id);
-  if (name) params.set('name', name);
-  if (college) params.set('college', college);
-  if (branch) params.set('branch', branch);
-  if (batch) params.set('batch', batch);
-
-  const query = params.toString();
-  return `${origin}/verify-alum${query ? `?${query}` : ''}`;
+  const enrollment = String(member.enrollment || member.enroll_no || member.membership_id || member.bistaa_id || '').trim();
+  const query = enrollment ? `?query=${encodeURIComponent(enrollment)}` : '';
+  return `${origin}/status${query}`;
 }
 
 export function createMemberIdentityPayload(member = {}) {
-  // Returns direct verification link for /verify-alum so scanning the QR code
-  // automatically opens the official verification page on any device
+  // Returns direct status link for member pass so scanning the QR code
+  // automatically opens their official digital pass on any device
   return createMemberVerificationUrl(member);
 }
 

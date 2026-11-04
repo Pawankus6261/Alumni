@@ -17,13 +17,12 @@ const ActiveMembersPage = lazy(() => import('./pages/ActiveMembersPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
 const GalleryPage = lazy(() => import('./pages/GalleryPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
-const VerifyAlumPage = lazy(() => import('./pages/VerifyAlumPage'));
 
 import { clearPublicDataCache, getAdminSlipUrl, getCachedPublicBootstrap, getPublicBootstrap, getAlumni, submitBistaaApplication, submitRegistration, createRsvp } from './api';
 
 const AVAILABLE_VIEWS = new Set([
   'home', 'directory', 'bistaa', 'register', 'status',
-  'active-members', 'events', 'gallery', 'admin', 'verify'
+  'active-members', 'events', 'gallery', 'admin'
 ]);
 
 const VIEW_PATHS = {
@@ -36,7 +35,6 @@ const VIEW_PATHS = {
   events: '/events',
   gallery: '/gallery',
   admin: '/admin',
-  verify: '/verify-alum',
 };
 
 const getViewFromLocation = () => {
@@ -45,12 +43,12 @@ const getViewFromLocation = () => {
   if (pathView) return pathView;
   if (path === '/active-members') return 'active-members';
   if (path === '/membership' || path === '/bistaa/register') return 'bistaa';
-  if (path === '/verify-alum' || path === '/verify' || path === '/verify-alumni') return 'verify';
+  if (path === '/verify-alum' || path === '/verify' || path === '/verify-alumni') return 'status';
 
   // Read old hash URLs once, then replace them with their clean route.
   const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
   if (hash === 'bistaa') return 'active-members';
-  if (hash === 'verify' || hash === 'verify-alum') return 'verify';
+  if (hash === 'verify' || hash === 'verify-alum') return 'status';
   return AVAILABLE_VIEWS.has(hash) ? hash : 'home';
 };
 
@@ -100,15 +98,14 @@ export default function App() {
       events: 'Campus Events & Reunions | BGI ALUMENTO',
       gallery: 'Campus Nostalgia Gallery | BGI ALUMENTO',
       admin: 'Admin Verification Console | BGI ALUMENTO',
-      verify: 'Official Alumni & BISTAA Verification | BGI ALUMENTO',
     };
     document.title = titles[currentView] || 'BGI ALUMENTO';
   }, [currentView]);
 
-  // Warm the QR generator while the member/status/verify page is being viewed,
+  // Warm the QR generator while the member/status page is being viewed,
   // so opening a digital pass does not wait for its code chunk to download.
   useEffect(() => {
-    if (currentView === 'active-members' || currentView === 'status' || currentView === 'verify') {
+    if (currentView === 'active-members' || currentView === 'status') {
       preloadMemberQr().catch(() => {});
     }
   }, [currentView]);
@@ -120,7 +117,6 @@ export default function App() {
     let timeoutHandle;
     const preload = () => {
       import('./pages/ActiveMembersPage').catch(() => {});
-      import('./pages/VerifyAlumPage').catch(() => {});
       preloadMemberQr().catch(() => {});
     };
     if ('requestIdleCallback' in window) idleHandle = window.requestIdleCallback(preload, { timeout: 1800 });
@@ -298,16 +294,6 @@ export default function App() {
             dataLoadFailed={apiUnavailable}
             dataLoading={dataLoading}
             onRetryData={retryDataLoad}
-          />
-        )}
-
-        {currentView === 'verify' && (
-          <VerifyAlumPage
-            alumniList={alumniList}
-            membersList={membersList}
-            onOpenDigitalPass={(app) => setDigitalPassData(app)}
-            setView={setCurrentView}
-            showToast={showToast}
           />
         )}
 

@@ -177,7 +177,7 @@ export default function DigitalPassModal({ passData, onClose }) {
                 <>
                   <img className="digital-pass-identity-qr" src={identityQr} alt={`Unique BISTAA identity QR for ${memberIdentifier}`} />
                   <div style={{ fontSize: '0.625rem', color: '#64748b', marginTop: 4, maxWidth: 120, lineHeight: 1.2 }}>
-                    Scan QR to open <b>/verify-alum</b>
+                    Official Member Pass QR
                   </div>
                 </>
               ) : (
@@ -205,22 +205,6 @@ export default function DigitalPassModal({ passData, onClose }) {
 
         {/* Modal Actions */}
         <div className="digital-pass-modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
-          <a
-            href={`/verify-alum?enrollment=${encodeURIComponent(enrollment)}&membership_id=${encodeURIComponent(officialMembershipId)}`}
-            className="btn btn-secondary"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
-            onClick={(e) => {
-              e.preventDefault();
-              onClose();
-              if (typeof window !== 'undefined') {
-                const targetUrl = `/verify-alum?enrollment=${encodeURIComponent(enrollment)}&membership_id=${encodeURIComponent(officialMembershipId)}`;
-                window.history.pushState({}, '', targetUrl);
-                window.dispatchEvent(new PopStateEvent('popstate'));
-              }
-            }}
-          >
-            <ShieldCheck size={16} /> Open /verify-alum
-          </a>
           <button className="btn btn-secondary" onClick={onClose}>
             Close
           </button>

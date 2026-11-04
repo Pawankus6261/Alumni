@@ -301,17 +301,6 @@ export default function StatusPage({ onOpenSlip, onOpenDigitalPass, setView, ini
                         Official BISTAA Lifetime Identity Pass
                       </h4>
                       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            if (setView) {
-                              setView('verify', `?enrollment=${encodeURIComponent(searchedRecord.enrollment)}&membership_id=${encodeURIComponent(searchedRecord.membership_id || '')}`);
-                            }
-                          }}
-                        >
-                          <ShieldCheck size={14} /> View /verify-alum
-                        </button>
                         <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>
                           <Printer size={15} /> Print Physical Card
                         </button>
@@ -402,7 +391,7 @@ export default function StatusPage({ onOpenSlip, onOpenDigitalPass, setView, ini
                           {memberIdentityQr ? (
                             <>
                               <img src={memberIdentityQr} alt={`Unique identity QR for ${searchedRecord.membership_id}`} style={{ display: 'block', boxSizing: 'border-box', width: 128, height: 128, minWidth: 128, aspectRatio: '1 / 1', objectFit: 'contain', border: '1px solid #cbd5e1', borderRadius: '6px', imageRendering: 'pixelated' }} />
-                              <div style={{ fontSize: '0.625rem', color: '#64748b', marginTop: 4, maxWidth: 128 }}>Scan QR to open <b>/verify-alum</b></div>
+                              <div style={{ fontSize: '0.625rem', color: '#64748b', marginTop: 4, maxWidth: 128 }}>Official Member Pass QR</div>
                             </>
                           ) : (
                             <div style={{ boxSizing: 'border-box', width: 128, height: 128, minWidth: 128, aspectRatio: '1 / 1', display: 'grid', placeItems: 'center', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#64748b', fontSize: 10 }}>Preparing QR…</div>

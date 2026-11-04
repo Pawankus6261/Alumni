@@ -584,6 +584,7 @@ def list_active_members(search: str | None = None, college: str | None = None, b
         if not profile:
             profile = by_name.get(normalize_key(full_name), {})
         names = full_name.split(" ", 1)
+        img = profile.get("img_url") or profile.get("photo_url") or profile.get("avatar")
         item = {
             **profile,
             "id": f"member-{entry['id']}",
@@ -595,6 +596,10 @@ def list_active_members(search: str | None = None, college: str | None = None, b
             "batch": profile.get("batch"),
             "bistaa_id": entry.get("alumni_registration_number") or "",
             "is_bistaa_member": True,
+            "img_url": img,
+            "photo": img,
+            "photo_url": img,
+            "avatar": img,
         }
         members.append(item)
 

@@ -92,7 +92,6 @@ export default function Footer({ setView }) {
                 { id: 'bistaa',    label: 'BISTAA Lifetime (₹300)' },
                 { id: 'register',  label: 'Join Network (Free)' },
                 { id: 'status',    label: 'Check Status' },
-                { id: 'verify',    label: 'Verify Alumni Credential' },
               ].map(link => (
                 <li key={link.id}>
                   <span className="footer-link" onClick={() => nav(link.id)}>{link.label}</span>
