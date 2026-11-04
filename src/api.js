@@ -183,6 +183,9 @@ export const updateAdminAlumnusPhoto = (id, { photo_url = '', file } = {}) => {
 export const reviewAdminApplication = (id, payload) => apiRequest(`/admin/applications/${id}/review`, {
   method: 'POST', body: JSON.stringify(payload),
 });
+export const deleteAdminApplication = (id) => apiRequest(`/admin/applications/${id}`, {
+  method: 'DELETE',
+});
 export const createAdminEvent = async (payload) => {
   const res = await apiRequest('/admin/events', { method: 'POST', body: JSON.stringify(payload) });
   clearPublicDataCache();
@@ -230,8 +233,9 @@ export const deleteDepartment = async (id) => {
 };
 export const deleteAdminRsvp = (id) => apiRequest(`/admin/rsvps/${id}`, { method: 'DELETE' });
 export const getAdminAccounts = () => apiRequest('/admin/accounts');
+export const getAdminMe = () => apiRequest('/admin/me');
 export const createAdminAccount = (payload) => apiRequest('/admin/accounts', { method: 'POST', body: JSON.stringify(payload) });
-export const changeAdminRole = (username, role) => apiRequest(`/admin/accounts/${encodeURIComponent(username)}/role`, { method: 'PUT', body: JSON.stringify({ role }) });
+export const changeAdminRole = (username, role, department_id = null) => apiRequest(`/admin/accounts/${encodeURIComponent(username)}/role`, { method: 'PUT', body: JSON.stringify({ role, department_id: department_id ? Number(department_id) : null }) });
 export const resetAdminAccountPassword = (username, password) => apiRequest(`/admin/accounts/${encodeURIComponent(username)}/password`, { method: 'PUT', body: JSON.stringify({ password }) });
 export const deleteAdminAccount = (username) => apiRequest(`/admin/accounts/${encodeURIComponent(username)}`, { method: 'DELETE' });
 export const getAdminAudit = () => apiRequest('/admin/audit');

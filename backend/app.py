@@ -130,7 +130,8 @@ class AdminCourseRequest(BaseModel):
 class AdminAccountRequest(BaseModel):
     username: str = Field(min_length=3, max_length=100)
     password: str = Field(min_length=8, max_length=200)
-    role: str = Field(default="reviewer", pattern="^(super_admin|reviewer|content_manager|read_only)$")
+    role: str = Field(default="reviewer", pattern="^(super_admin|department_hod|reviewer|content_manager|read_only)$")
+    department_id: int | None = Field(default=None, ge=1)
 
 
 class AdminPasswordRequest(BaseModel):
@@ -138,7 +139,8 @@ class AdminPasswordRequest(BaseModel):
 
 
 class AdminRoleRequest(BaseModel):
-    role: str = Field(pattern="^(super_admin|reviewer|content_manager|read_only)$")
+    role: str = Field(pattern="^(super_admin|department_hod|reviewer|content_manager|read_only)$")
+    department_id: int | None = Field(default=None, ge=1)
 
 
 class GalleryUpdateRequest(BaseModel):
@@ -293,6 +295,11 @@ def ensure_backend_tables() -> None:
             event_columns = {row["Field"] for row in connection.execute(text("SHOW COLUMNS FROM events")).mappings()}
         if "role" not in admin_columns:
             connection.execute(text("ALTER TABLE api_admins ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'super_admin'"))
+        if "department_id" not in admin_columns:
+            if engine.dialect.name == "sqlite":
+                connection.execute(text("ALTER TABLE api_admins ADD COLUMN department_id INTEGER NULL REFERENCES courses(id)"))
+            else:
+                connection.execute(text("ALTER TABLE api_admins ADD COLUMN department_id INT NULL"))
         if "sort_order" not in gallery_columns:
             connection.execute(text("ALTER TABLE managed_gallery ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
         if "featured" not in gallery_columns:
@@ -373,6 +380,19 @@ def require_roles(*allowed_roles: str):
             raise HTTPException(403, "Your administrator role does not allow this action.")
         return username
     return check_role
+
+
+def get_current_admin(username: str = Depends(require_admin)) -> dict:
+    with engine.connect() as connection:
+        admin = connection.execute(text("""
+            SELECT a.username, a.role, a.department_id, c.course AS department_name
+            FROM api_admins a
+            LEFT JOIN courses c ON c.id = a.department_id
+            WHERE a.username = :username
+        """), {"username": username}).mappings().first()
+    if not admin:
+        raise HTTPException(401, "Admin account is no longer active.")
+    return dict(admin)
 
 
 def audit(actor: str, action: str, entity_type: str, entity_id: Any = None, details: str = "") -> None:
@@ -503,13 +523,21 @@ def safe_application(connection, row: dict[str, Any]) -> dict[str, Any]:
     enrollment = str(row.get("enrollment_number") or "")
     review = connection.execute(text("SELECT status, membership_id, rejection_reason, verified_by, reviewed_at FROM bistaa_application_reviews WHERE submission_id=:id"), {"id": row["id"]}).mappings().first()
     active = connection.execute(text("SELECT alumni_registration_number FROM vista_active_members WHERE enrollment_number=:enrollment"), {"enrollment": enrollment}).mappings().first()
-    status = "ACTIVE" if active else (review["status"] if review else "PENDING_VERIFICATION")
+    if review and review["status"] == "REJECTED":
+        status = "REJECTED"
+    elif active:
+        status = "ACTIVE"
+    elif review and review["status"]:
+        status = review["status"]
+    else:
+        status = "PENDING_VERIFICATION"
     return {
         "id": str(row["id"]), "enrollment": enrollment, "name": row.get("name") or "",
         "branch": row.get("branch") or "", "college": "BIST", "amount": float(row.get("amount") or 300),
         "upi_transaction_id": row.get("upi_transaction_id") or "", "transaction_slip": None,
         "has_transaction_slip": bool(row.get("transaction_slip")),
-        "status": status, "membership_id": (active or {}).get("alumni_registration_number") or (review or {}).get("membership_id"),
+        "status": status,
+        "membership_id": (review or {}).get("membership_id") or ((active or {}).get("alumni_registration_number") if status == "ACTIVE" else None),
         "rejection_reason": (review or {}).get("rejection_reason"), "verified_by": (review or {}).get("verified_by"),
         "submitted_at": str(row.get("submitted_at") or ""), "verified_at": str((review or {}).get("reviewed_at") or "") or None,
     }
@@ -1100,29 +1128,75 @@ def create_event_rsvp(event_id: int, payload: RsvpRequest):
 @app.post("/api/admin/login")
 def admin_login(username: str = Form(...), password: str = Form(...)):
     with engine.connect() as connection:
-        admin = connection.execute(text("SELECT username, password_hash, role FROM api_admins WHERE username=:username"), {"username": username.strip()}).mappings().first()
+        admin = connection.execute(text("""
+            SELECT a.username, a.password_hash, a.role, a.department_id, c.course AS department_name
+            FROM api_admins a
+            LEFT JOIN courses c ON c.id = a.department_id
+            WHERE a.username = :username
+        """), {"username": username.strip()}).mappings().first()
     if not admin or not verify_password(password, admin["password_hash"]):
         raise HTTPException(status_code=401, detail="Username or password is incorrect.")
-    return {"access_token": encode_token(admin["username"]), "token_type": "bearer", "expires_in": TOKEN_TTL_SECONDS, "role": admin["role"]}
+    return {
+        "access_token": encode_token(admin["username"]),
+        "token_type": "bearer",
+        "expires_in": TOKEN_TTL_SECONDS,
+        "role": admin["role"],
+        "department_id": admin["department_id"],
+        "department_name": admin["department_name"],
+    }
+
+
+@app.get("/api/admin/me")
+def admin_me(admin: dict = Depends(get_current_admin)):
+    return admin
 
 
 @app.get("/api/admin/applications")
-def admin_applications(username: str = Depends(require_admin)):
+def admin_applications(admin: dict = Depends(get_current_admin)):
     with engine.connect() as connection:
-        rows = connection.execute(text("SELECT * FROM bistaa_submissions ORDER BY submitted_at DESC, id DESC")).mappings().all()
+        if admin["role"] == "department_hod":
+            dept_name = (admin.get("department_name") or "").strip()
+            rows = connection.execute(text("""
+                SELECT * FROM bistaa_submissions
+                WHERE UPPER(branch) = UPPER(:dept)
+                   OR UPPER(branch) LIKE UPPER(:dept_like)
+                ORDER BY submitted_at DESC, id DESC
+            """), {
+                "dept": dept_name,
+                "dept_like": f"%{dept_name}%" if dept_name else "__NONE__",
+            }).mappings().all()
+        else:
+            rows = connection.execute(text("SELECT * FROM bistaa_submissions ORDER BY submitted_at DESC, id DESC")).mappings().all()
         applications = [safe_application(connection, dict(row)) for row in rows]
-    return {"applications": applications, "verified_by": username}
+    return {"applications": applications, "verified_by": admin["username"]}
 
 
 @app.get("/api/admin/bistaa/members")
-def admin_bistaa_members(username: str = Depends(require_admin)):
+def admin_bistaa_members(admin: dict = Depends(get_current_admin)):
     """Return active BISTAA members with any safely linked alumni profile details."""
+    dept_id = admin.get("department_id") if admin.get("role") == "department_hod" else None
+    dept_name = (admin.get("department_name") or "").strip() if admin.get("role") == "department_hod" else None
     with engine.connect() as connection:
-        active_rows = connection.execute(text("""SELECT id, student_name, enrollment_number, branch,
-          amount, alumni_registration_number FROM vista_active_members ORDER BY student_name, id""")).mappings().all()
-        profile_rows = connection.execute(text("""SELECT a.id, a.firstname, a.lastname, a.enroll_no, a.college,
-          a.batch, a.email, a.phone_no, a.pos, a.connected_to, a.companyloc, a.companysector,
-          a.status, a.course_id, a.avatar, c.course FROM alumnus_bio a LEFT JOIN courses c ON c.id=a.course_id""")).mappings().all()
+        if dept_id and dept_name:
+            active_rows = connection.execute(text("""
+                SELECT id, student_name, enrollment_number, branch,
+                amount, alumni_registration_number FROM vista_active_members
+                WHERE UPPER(branch) = UPPER(:dept) OR UPPER(branch) LIKE UPPER(:dept_like)
+                ORDER BY student_name, id
+            """), {"dept": dept_name, "dept_like": f"%{dept_name}%"}).mappings().all()
+            profile_rows = connection.execute(text("""
+                SELECT a.id, a.firstname, a.lastname, a.enroll_no, a.college,
+                a.batch, a.email, a.phone_no, a.pos, a.connected_to, a.companyloc, a.companysector,
+                a.status, a.course_id, a.avatar, c.course FROM alumnus_bio a
+                LEFT JOIN courses c ON c.id=a.course_id
+                WHERE a.course_id = :dept_id
+            """), {"dept_id": dept_id}).mappings().all()
+        else:
+            active_rows = connection.execute(text("""SELECT id, student_name, enrollment_number, branch,
+              amount, alumni_registration_number FROM vista_active_members ORDER BY student_name, id""")).mappings().all()
+            profile_rows = connection.execute(text("""SELECT a.id, a.firstname, a.lastname, a.enroll_no, a.college,
+              a.batch, a.email, a.phone_no, a.pos, a.connected_to, a.companyloc, a.companysector,
+              a.status, a.course_id, a.avatar, c.course FROM alumnus_bio a LEFT JOIN courses c ON c.id=a.course_id""")).mappings().all()
 
     def normalize_key(value: Any) -> str:
         return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
@@ -1221,33 +1295,51 @@ def update_admin_bistaa_member(member_id: int, payload: AdminBistaaMemberUpdate,
 
 
 @app.get("/api/admin/alumni/pending")
-def pending_alumni(username: str = Depends(require_admin)):
+def pending_alumni(admin: dict = Depends(get_current_admin)):
+    dept_filter = ""
+    params = {}
+    if admin.get("role") == "department_hod" and admin.get("department_id"):
+        dept_filter = "AND a.course_id = :dept_id"
+        params["dept_id"] = admin["department_id"]
     with engine.connect() as connection:
-        rows = connection.execute(text("""SELECT a.id, a.firstname, a.lastname, a.enroll_no, a.college,
+        rows = connection.execute(text(f"""SELECT a.id, a.firstname, a.lastname, a.enroll_no, a.college,
           a.batch, a.email, a.phone_no, c.course FROM alumnus_bio a
-          LEFT JOIN courses c ON c.id=a.course_id WHERE a.status=0
-          ORDER BY a.id DESC LIMIT 500""")).mappings().all()
+          LEFT JOIN courses c ON c.id=a.course_id WHERE a.status=0 {dept_filter}
+          ORDER BY a.id DESC LIMIT 500"""), params).mappings().all()
     return [dict(row) for row in rows]
 
 
 @app.get("/api/admin/alumni")
-def admin_alumni_list(username: str = Depends(require_admin)):
+def admin_alumni_list(admin: dict = Depends(get_current_admin)):
+    dept_filter = ""
+    params = {}
+    if admin.get("role") == "department_hod" and admin.get("department_id"):
+        dept_filter = "WHERE a.course_id = :dept_id"
+        params["dept_id"] = admin["department_id"]
     with engine.connect() as connection:
-        rows = connection.execute(text("""SELECT a.id, a.firstname, a.lastname, a.enroll_no, a.college,
+        rows = connection.execute(text(f"""SELECT a.id, a.firstname, a.lastname, a.enroll_no, a.college,
           a.batch, a.course_id, c.course, a.email, a.phone_no, a.pos, a.connected_to,
           a.companyloc, a.companysector, a.status, a.avatar, d.bio
           FROM alumnus_bio a LEFT JOIN courses c ON c.id=a.course_id
           LEFT JOIN alumni_registration_details d ON d.alumnus_id=a.id
-          ORDER BY a.lastname, a.firstname""")).mappings().all()
+          {dept_filter}
+          ORDER BY a.lastname, a.firstname"""), params).mappings().all()
     return [{**dict(row), "photo_url": profile_image_url(row.get("avatar"))} for row in rows]
 
 
 @app.put("/api/admin/alumni/{alumnus_id}")
-def update_admin_alumnus(alumnus_id: int, payload: AdminAlumniUpdate, username: str = Depends(require_roles("reviewer"))):
+def update_admin_alumnus(alumnus_id: int, payload: AdminAlumniUpdate, username: str = Depends(require_roles("reviewer", "department_hod"))):
     email_clean = payload.email.strip()
     if email_clean and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email_clean):
         raise HTTPException(422, "Enter a valid email address.")
     with engine.begin() as connection:
+        admin = connection.execute(text("SELECT role, department_id FROM api_admins WHERE username=:username"), {"username": username}).mappings().first()
+        if admin and admin["role"] == "department_hod":
+            curr_course = connection.execute(text("SELECT course_id FROM alumnus_bio WHERE id=:id"), {"id": alumnus_id}).scalar()
+            if not curr_course or curr_course != admin["department_id"]:
+                raise HTTPException(403, "HOD can only update students from their own department.")
+            if payload.course_id != admin["department_id"]:
+                raise HTTPException(403, "HOD cannot reassign a student to a different department.")
         if not connection.execute(text("SELECT 1 FROM courses WHERE id=:id"), {"id": payload.course_id}).first():
             raise HTTPException(422, "Select a valid department or course.")
         current_profile = connection.execute(text("SELECT firstname, lastname, enroll_no FROM alumnus_bio WHERE id=:id"), {"id": alumnus_id}).mappings().first()
@@ -1289,7 +1381,7 @@ def update_admin_alumnus_photo(
     alumnus_id: int,
     photo_url: str = Form(default=""),
     avatar: UploadFile | None = File(default=None),
-    username: str = Depends(require_roles("reviewer")),
+    username: str = Depends(require_roles("reviewer", "department_hod")),
 ):
     """Set or clear an alumni profile photo using an uploaded image or an image URL."""
     image_value = ""
@@ -1305,6 +1397,11 @@ def update_admin_alumnus_photo(
         if len(image_value) > 1000:
             raise HTTPException(422, "The image URL is too long.")
     with engine.begin() as connection:
+        admin = connection.execute(text("SELECT role, department_id FROM api_admins WHERE username=:username"), {"username": username}).mappings().first()
+        if admin and admin["role"] == "department_hod":
+            curr_course = connection.execute(text("SELECT course_id FROM alumnus_bio WHERE id=:id"), {"id": alumnus_id}).scalar()
+            if not curr_course or curr_course != admin["department_id"]:
+                raise HTTPException(403, "HOD can only update photo for students from their own department.")
         result = connection.execute(text("UPDATE alumnus_bio SET avatar=:avatar WHERE id=:id"), {
             "avatar": image_value or None, "id": alumnus_id,
         })
@@ -1469,7 +1566,12 @@ def delete_department(department_id: int, username: str = Depends(require_roles(
 @app.get("/api/admin/accounts")
 def list_admin_accounts(username: str = Depends(require_admin)):
     with engine.connect() as connection:
-        rows = connection.execute(text("SELECT username, role, created_at FROM api_admins ORDER BY username")).mappings().all()
+        rows = connection.execute(text("""
+            SELECT a.username, a.role, a.department_id, c.course AS department_name, a.created_at
+            FROM api_admins a
+            LEFT JOIN courses c ON c.id = a.department_id
+            ORDER BY a.username
+        """)).mappings().all()
     return [{**dict(row), "is_current": row["username"] == username} for row in rows]
 
 
@@ -1478,11 +1580,26 @@ def create_admin_account(payload: AdminAccountRequest, username: str = Depends(r
     clean_username = payload.username.strip()
     if not re.fullmatch(r"[A-Za-z0-9_.-]{3,100}", clean_username):
         raise HTTPException(422, "Username may contain letters, numbers, dots, underscores, and hyphens.")
+    if payload.role == "department_hod" and not payload.department_id:
+        raise HTTPException(422, "Please select an assigned department for this Department HOD account.")
+    dept_id = payload.department_id if payload.role == "department_hod" else None
     with engine.begin() as connection:
+        if dept_id:
+            dept_exists = connection.execute(text("SELECT 1 FROM courses WHERE id=:id"), {"id": dept_id}).first()
+            if not dept_exists:
+                raise HTTPException(422, "The selected department does not exist.")
         if connection.execute(text("SELECT 1 FROM api_admins WHERE username=:username"), {"username": clean_username}).first():
             raise HTTPException(409, "That admin username already exists.")
-        connection.execute(text("INSERT INTO api_admins (username, password_hash, role) VALUES (:username, :password, :role)"), {"username": clean_username, "password": hash_password(payload.password), "role": payload.role})
-    audit(username, "created", "admin_account", clean_username, payload.role)
+        connection.execute(text("""
+            INSERT INTO api_admins (username, password_hash, role, department_id)
+            VALUES (:username, :password, :role, :department_id)
+        """), {
+            "username": clean_username,
+            "password": hash_password(payload.password),
+            "role": payload.role,
+            "department_id": dept_id,
+        })
+    audit(username, "created", "admin_account", clean_username, f"{payload.role} (department_id: {dept_id})")
     return {"username": clean_username, "created": True}
 
 
@@ -1515,12 +1632,25 @@ def delete_admin_account(account_username: str, username: str = Depends(require_
 def change_admin_role(account_username: str, payload: AdminRoleRequest, username: str = Depends(require_roles("super_admin"))):
     if account_username == username and payload.role != "super_admin":
         raise HTTPException(409, "You cannot remove your own super-admin access.")
+    if payload.role == "department_hod" and not payload.department_id:
+        raise HTTPException(422, "Please select an assigned department for this Department HOD account.")
+    dept_id = payload.department_id if payload.role == "department_hod" else None
     with engine.begin() as connection:
-        result = connection.execute(text("UPDATE api_admins SET role=:role WHERE username=:username"), {"username": account_username, "role": payload.role})
+        if dept_id:
+            dept_exists = connection.execute(text("SELECT 1 FROM courses WHERE id=:id"), {"id": dept_id}).first()
+            if not dept_exists:
+                raise HTTPException(422, "The selected department does not exist.")
+        result = connection.execute(text("""
+            UPDATE api_admins SET role=:role, department_id=:department_id WHERE username=:username
+        """), {
+            "username": account_username,
+            "role": payload.role,
+            "department_id": dept_id,
+        })
         if not result.rowcount:
             raise HTTPException(404, "Admin account not found.")
-    audit(username, "changed_role", "admin_account", account_username, payload.role)
-    return {"username": account_username, "role": payload.role}
+    audit(username, "changed_role", "admin_account", account_username, f"{payload.role} (department_id: {dept_id})")
+    return {"username": account_username, "role": payload.role, "department_id": dept_id}
 
 
 @app.get("/api/admin/audit")
@@ -1530,8 +1660,12 @@ def get_admin_audit(limit: int = Query(default=100, ge=1, le=500), username: str
     return [dict(row) for row in rows]
 
 
-def _admin_notification_items(connection) -> list[dict]:
-    pending_profiles = connection.execute(text("SELECT COUNT(*) FROM alumnus_bio WHERE status=0")).scalar_one()
+def _admin_notification_items(connection, admin: dict | None = None) -> list[dict]:
+    dept_id = admin.get("department_id") if (admin and admin.get("role") == "department_hod") else None
+    if dept_id:
+        pending_profiles = connection.execute(text("SELECT COUNT(*) FROM alumnus_bio WHERE status=0 AND course_id=:dept_id"), {"dept_id": dept_id}).scalar_one()
+    else:
+        pending_profiles = connection.execute(text("SELECT COUNT(*) FROM alumnus_bio WHERE status=0")).scalar_one()
     pending_memberships = connection.execute(text("""SELECT COUNT(*) FROM bistaa_submissions s
       LEFT JOIN bistaa_application_reviews r ON r.submission_id=s.id
       LEFT JOIN vista_active_members m ON m.enrollment_number=s.enrollment_number
@@ -1548,8 +1682,8 @@ def _admin_notification_items(connection) -> list[dict]:
     return notices
 
 
-def _unread_admin_notifications(connection, username: str) -> dict:
-    notices = _admin_notification_items(connection)
+def _unread_admin_notifications(connection, username: str, admin: dict | None = None) -> dict:
+    notices = _admin_notification_items(connection, admin)
     reads = connection.execute(text("SELECT notification_id, read_count FROM admin_notification_reads WHERE username=:username"), {"username": username}).mappings().all()
     read_counts = {row["notification_id"]: int(row["read_count"]) for row in reads}
     unread = []
@@ -1566,9 +1700,9 @@ def _unread_admin_notifications(connection, username: str) -> dict:
 
 
 @app.get("/api/admin/notifications")
-def get_admin_notifications(username: str = Depends(require_admin)):
+def get_admin_notifications(admin: dict = Depends(get_current_admin)):
     with engine.begin() as connection:
-        return _unread_admin_notifications(connection, username)
+        return _unread_admin_notifications(connection, admin["username"], admin)
 
 
 @app.post("/api/admin/notifications/{notification_id}/read")
@@ -1771,8 +1905,13 @@ def commit_alumni_import(file: UploadFile = File(...), username: str = Depends(r
 
 
 @app.post("/api/admin/alumni/{alumnus_id}/verify")
-def verify_alumnus(alumnus_id: int, payload: AlumniVerificationRequest, username: str = Depends(require_roles("reviewer"))):
+def verify_alumnus(alumnus_id: int, payload: AlumniVerificationRequest, username: str = Depends(require_roles("reviewer", "department_hod"))):
     with engine.begin() as connection:
+        admin = connection.execute(text("SELECT role, department_id FROM api_admins WHERE username=:username"), {"username": username}).mappings().first()
+        if admin and admin["role"] == "department_hod":
+            alumnus_course = connection.execute(text("SELECT course_id FROM alumnus_bio WHERE id=:id"), {"id": alumnus_id}).scalar()
+            if not alumnus_course or alumnus_course != admin["department_id"]:
+                raise HTTPException(403, "Department HODs may only verify students in their assigned department.")
         result = connection.execute(text("UPDATE alumnus_bio SET status=:status WHERE id=:id"), {"status": 1 if payload.verified else 0, "id": alumnus_id})
         if result.rowcount == 0:
             raise HTTPException(404, "Alumni registration not found.")
@@ -1781,8 +1920,13 @@ def verify_alumnus(alumnus_id: int, payload: AlumniVerificationRequest, username
 
 
 @app.post("/api/admin/alumni/{alumnus_id}/reject")
-def reject_alumnus(alumnus_id: int, username: str = Depends(require_roles("reviewer"))):
+def reject_alumnus(alumnus_id: int, username: str = Depends(require_roles("reviewer", "department_hod"))):
     with engine.begin() as connection:
+        admin = connection.execute(text("SELECT role, department_id FROM api_admins WHERE username=:username"), {"username": username}).mappings().first()
+        if admin and admin["role"] == "department_hod":
+            alumnus_course = connection.execute(text("SELECT course_id FROM alumnus_bio WHERE id=:id"), {"id": alumnus_id}).scalar()
+            if not alumnus_course or alumnus_course != admin["department_id"]:
+                raise HTTPException(403, "Department HODs may only reject students in their assigned department.")
         result = connection.execute(text("UPDATE alumnus_bio SET status=2 WHERE id=:id AND status=0"), {"id": alumnus_id})
         if result.rowcount == 0:
             exists = connection.execute(text("SELECT status FROM alumnus_bio WHERE id=:id"), {"id": alumnus_id}).first()
@@ -1794,8 +1938,13 @@ def reject_alumnus(alumnus_id: int, username: str = Depends(require_roles("revie
 
 
 @app.delete("/api/admin/alumni/{alumnus_id}")
-def delete_alumnus(alumnus_id: int, username: str = Depends(require_roles("reviewer"))):
+def delete_alumnus(alumnus_id: int, username: str = Depends(require_roles("reviewer", "department_hod"))):
     with engine.begin() as connection:
+        admin = connection.execute(text("SELECT role, department_id FROM api_admins WHERE username=:username"), {"username": username}).mappings().first()
+        if admin and admin["role"] == "department_hod":
+            alumnus_course = connection.execute(text("SELECT course_id FROM alumnus_bio WHERE id=:id"), {"id": alumnus_id}).scalar()
+            if not alumnus_course or alumnus_course != admin["department_id"]:
+                raise HTTPException(403, "Department HODs may only delete students in their assigned department.")
         result = connection.execute(text("DELETE FROM alumnus_bio WHERE id=:id"), {"id": alumnus_id})
         if result.rowcount == 0:
             raise HTTPException(404, "Alumni profile not found.")
@@ -1823,6 +1972,10 @@ def review_application(application_id: int, payload: ReviewRequest, username: st
                 })
                 member_id = f"BISTAA-{date.today().year}-{int(result.lastrowid):04d}"
                 connection.execute(text("UPDATE vista_active_members SET alumni_registration_number=:member_id WHERE id=:id"), {"member_id": member_id, "id": result.lastrowid})
+        elif payload.status == "REJECTED":
+            # If rejected, remove any active membership row created for this enrollment
+            connection.execute(text("DELETE FROM vista_active_members WHERE enrollment_number=:enrollment"), {"enrollment": submission["enrollment_number"]})
+            member_id = None
         if engine.dialect.name == "sqlite":
             review_sql = """INSERT INTO bistaa_application_reviews
               (submission_id, status, membership_id, rejection_reason, verified_by, reviewed_at)
@@ -1842,6 +1995,22 @@ def review_application(application_id: int, payload: ReviewRequest, username: st
         })
     audit(username, payload.status.lower(), "bistaa_application", application_id, payload.rejection_reason or "")
     return {"id": str(application_id), "status": payload.status, "membership_id": member_id, "verified_by": username}
+
+
+@app.delete("/api/admin/applications/{application_id}")
+def delete_admin_application(application_id: int, username: str = Depends(require_roles("reviewer"))):
+    with engine.begin() as connection:
+        submission = connection.execute(text("SELECT enrollment_number FROM bistaa_submissions WHERE id=:id"), {"id": application_id}).mappings().first()
+        if not submission:
+            raise HTTPException(404, "Application not found.")
+        # Remove any active member record linked to this enrollment
+        connection.execute(text("DELETE FROM vista_active_members WHERE enrollment_number=:enrollment"), {"enrollment": submission["enrollment_number"]})
+        # Remove from reviews
+        connection.execute(text("DELETE FROM bistaa_application_reviews WHERE submission_id=:id"), {"id": application_id})
+        # Remove the submission
+        connection.execute(text("DELETE FROM bistaa_submissions WHERE id=:id"), {"id": application_id})
+    audit(username, "deleted", "bistaa_application", application_id)
+    return {"id": application_id, "deleted": True}
 
 
 @app.get("/api/admin/slips/{application_id}")

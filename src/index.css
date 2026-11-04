@@ -3570,6 +3570,64 @@ a.footer-contact-item:hover {
   font-size: 0.68rem;
 }
 
+.site-institution-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  gap: 0.5rem;
+  padding: 0.6rem 1.05rem;
+  border: 1.5px solid #17365b;
+  border-radius: 0.7rem;
+  color: #17365b;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(23, 54, 91, 0.08);
+  font-family: var(--font-sans, Inter, system-ui, -apple-system, sans-serif);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.site-institution-btn:hover {
+  background: #17365b;
+  color: #ffffff;
+  border-color: #17365b;
+  box-shadow: 0 6px 18px rgba(23, 54, 91, 0.18);
+  transform: translateY(-1px);
+}
+
+.site-institution-btn:hover .site-institution-icon {
+  color: #f6c878;
+  transform: scale(1.08);
+}
+
+.site-institution-btn.is-active {
+  background: #17365b;
+  color: #ffffff;
+  border-color: #b8935f;
+  box-shadow: 0 4px 14px rgba(23, 54, 91, 0.22);
+  outline: 2px solid #b8935f;
+  outline-offset: 1px;
+}
+
+.site-institution-btn.is-active .site-institution-icon {
+  color: #f6c878;
+}
+
+.site-institution-btn:focus-visible {
+  outline: 3px solid rgba(184, 147, 95, 0.45);
+  outline-offset: 2px;
+}
+
+.site-institution-icon {
+  color: #b8935f;
+  transition: color 180ms ease, transform 180ms ease;
+  flex-shrink: 0;
+}
+
 .site-mobile-drawer {
   width: min(100%, 420px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -3718,6 +3776,7 @@ a.footer-contact-item:hover {
 
   .site-actions { gap: 0.5rem; }
   .site-join-cta { display: none; }
+  .site-institution-btn { display: none; }
   .site-menu-toggle {
     width: auto;
     min-width: 5.5rem;

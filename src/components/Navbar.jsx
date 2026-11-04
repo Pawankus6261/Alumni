@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, ShieldCheck, UserPlus } from 'lucide-react';
+import { Menu, X, ShieldCheck, UserPlus, Building2 } from 'lucide-react';
 import { BGI_BHOPAL_LOGO } from '../brand';
 
 const NAV_LINKS = [
@@ -139,6 +139,16 @@ export default function Navbar({ currentView, setView }) {
               <span>Become a member</span>
             </button>
 
+            {/* Institution Sign-in for Admin / HOD / Staff */}
+            <button
+              onClick={() => go('admin')}
+              aria-label="Institution Sign-in"
+              className={`site-institution-btn ${currentView === 'admin' ? 'is-active' : ''}`}
+            >
+              <Building2 size={15} className="site-institution-icon" />
+              <span>Institution Sign-in</span>
+            </button>
+
             {/* Mobile & Tablet Hamburger (shown on screens < xl) */}
             <button
               onClick={() => setOpen((prev) => !prev)}
@@ -235,6 +245,18 @@ export default function Navbar({ currentView, setView }) {
                 >
                   <UserPlus size={15} />
                   <span>Standard Registration</span>
+                </button>
+
+                <button
+                  onClick={() => go('admin')}
+                  className={`site-drawer-institution-btn w-full py-3 px-4 text-xs font-bold rounded-xl flex items-center justify-center gap-2.5 border transition-all cursor-pointer mt-2.5 ${
+                    currentView === 'admin'
+                      ? 'bg-[#17365B] text-white border-[#B8935F] shadow-sm'
+                      : 'text-[#17365B] bg-[#17365B]/5 hover:bg-[#17365B]/10 border-[#17365B]/20 hover:border-[#17365B]/40'
+                  }`}
+                >
+                  <Building2 size={16} className="text-[#B8935F]" />
+                  <span>Institution Sign-in (HOD / Admin)</span>
                 </button>
               </div>
 

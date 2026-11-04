@@ -11,7 +11,7 @@ import {
   adminLogin, changeAdminRole, commitAlumniImport, createAdminAccount, createAdminEvent, createAdminGalleryItem, createDatabaseBackup, createDepartment, getAdminAlumni,
   deleteAdminAccount, deleteAdminEvent, deleteAdminGalleryItem, deleteAdminRsvp, deleteDepartment, downloadSavedBackup,
   getAdminAccounts, getAdminApplications, getAdminBistaaMembers, getAdminBackups, getAdminRsvps, getCourses, getEvents, getGallery,
-  getAdminAnalytics, getAdminAudit, getAdminNotifications, getPendingAlumni, previewAlumniImport, rejectAdminAlumnus, resetAdminAccountPassword, restoreDatabaseBackup, reviewAdminApplication, setAlumnusVerification, deleteAdminAlumnus,
+  getAdminAnalytics, getAdminAudit, getAdminNotifications, getPendingAlumni, previewAlumniImport, rejectAdminAlumnus, resetAdminAccountPassword, restoreDatabaseBackup, reviewAdminApplication, deleteAdminApplication, setAlumnusVerification, deleteAdminAlumnus,
   updateAdminAlumnus, updateAdminAlumnusPhoto, updateAdminBistaaMember, updateAdminEvent, updateAdminGalleryItem, updateDepartment, markAdminNotificationRead,
 } from '../api';
 
@@ -178,6 +178,11 @@ function Metric({ label, value, caption, tone, icon: Icon }) {
 export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPass, showToast, onDataChanged }) {
   const [token, setToken] = useState(() => sessionStorage.getItem('bgi_admin_token') || '');
   const [adminRole, setAdminRole] = useState(() => sessionStorage.getItem('bgi_admin_role') || 'super_admin');
+  const [adminDeptId, setAdminDeptId] = useState(() => {
+    const val = sessionStorage.getItem('bgi_admin_dept_id');
+    return val ? Number(val) : null;
+  });
+  const [adminDeptName, setAdminDeptName] = useState(() => sessionStorage.getItem('bgi_admin_dept_name') || '');
   const [activeSection, setActiveSection] = useState('dashboard');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('bgi_admin_sidebar_collapsed') === 'true');
@@ -230,7 +235,24 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
       setCourses(courseResult || []);
       setAdminAccounts(accountsResult || []);
       const ownAccount = (accountsResult || []).find(account => account.is_current);
-      if (ownAccount?.role) { setAdminRole(ownAccount.role); sessionStorage.setItem('bgi_admin_role', ownAccount.role); }
+      if (ownAccount?.role) {
+        setAdminRole(ownAccount.role);
+        sessionStorage.setItem('bgi_admin_role', ownAccount.role);
+      }
+      if (ownAccount?.department_id) {
+        setAdminDeptId(Number(ownAccount.department_id));
+        sessionStorage.setItem('bgi_admin_dept_id', String(ownAccount.department_id));
+      } else {
+        setAdminDeptId(null);
+        sessionStorage.removeItem('bgi_admin_dept_id');
+      }
+      if (ownAccount?.department_name) {
+        setAdminDeptName(ownAccount.department_name);
+        sessionStorage.setItem('bgi_admin_dept_name', ownAccount.department_name);
+      } else {
+        setAdminDeptName('');
+        sessionStorage.removeItem('bgi_admin_dept_name');
+      }
       setNotifications(noticeResult || { count: 0, items: [] });
       setAuditLog(auditResult || []);
       setAnalytics(analyticsResult || { alumni_by_batch: [], profiles_by_college: [], rsvps_by_event: [] });
@@ -250,8 +272,11 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
 
   const logout = () => {
     sessionStorage.removeItem('bgi_admin_token');
+    sessionStorage.removeItem('bgi_admin_role');
+    sessionStorage.removeItem('bgi_admin_dept_id');
+    sessionStorage.removeItem('bgi_admin_dept_name');
     setToken(''); setApps([]); setPending([]); setRsvps([]);
-    setAdminRole(''); sessionStorage.removeItem('bgi_admin_role');
+    setAdminRole(''); setAdminDeptId(null); setAdminDeptName('');
   };
 
   const toggleSidebar = () => setSidebarCollapsed(collapsed => {
@@ -266,6 +291,20 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
       sessionStorage.setItem('bgi_admin_token', response.access_token);
       sessionStorage.setItem('bgi_admin_role', response.role || 'reviewer');
       setAdminRole(response.role || 'reviewer');
+      if (response.department_id) {
+        sessionStorage.setItem('bgi_admin_dept_id', String(response.department_id));
+        setAdminDeptId(Number(response.department_id));
+      } else {
+        sessionStorage.removeItem('bgi_admin_dept_id');
+        setAdminDeptId(null);
+      }
+      if (response.department_name) {
+        sessionStorage.setItem('bgi_admin_dept_name', response.department_name);
+        setAdminDeptName(response.department_name);
+      } else {
+        sessionStorage.removeItem('bgi_admin_dept_name');
+        setAdminDeptName('');
+      }
       setToken(response.access_token); setPassword('');
     } catch (error) { setLoginError(error.message || 'Sign in failed.'); }
     finally { setLoading(false); }
@@ -370,7 +409,24 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
           await createAdminGalleryItem(form);
         }
       } else if (dialog.kind === 'account') {
-        await createAdminAccount({ username: values.username, password: values.password });
+        if (values.role === 'department_hod' && !values.department_id) {
+          throw new Error('Please select an assigned department for the Department HOD account.');
+        }
+        const payload = {
+          username: values.username.trim(),
+          password: values.password,
+          role: values.role || 'reviewer',
+          department_id: (values.role === 'department_hod' && values.department_id) ? Number(values.department_id) : null,
+        };
+        await createAdminAccount(payload);
+        successMessage = `Admin account ${payload.username} created.`;
+      } else if (dialog.kind === 'account_role') {
+        if (values.role === 'department_hod' && !values.department_id) {
+          throw new Error('Please select an assigned department for the Department HOD account.');
+        }
+        const deptId = (values.role === 'department_hod' && values.department_id) ? Number(values.department_id) : null;
+        await changeAdminRole(dialog.username, values.role, deptId);
+        successMessage = `Access updated for ${dialog.username}.`;
       } else if (dialog.kind === 'password') {
         await resetAdminAccountPassword(dialog.username, values.password);
       } else if (dialog.kind === 'alumni') {
@@ -422,7 +478,7 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
   };
 
   const removeRecord = (kind, row) => {
-    const label = kind === 'event' ? row.title : kind === 'course' ? row.course : kind === 'gallery' ? row.title : kind === 'rsvp' ? `${row.attendee_name}'s RSVP` : kind === 'alumni' ? `${row.firstname} ${row.lastname}` : row.username;
+    const label = kind === 'event' ? row.title : kind === 'course' ? row.course : kind === 'gallery' ? row.title : kind === 'rsvp' ? `${row.attendee_name}'s RSVP` : kind === 'alumni' ? `${row.firstname} ${row.lastname}` : kind === 'application' ? `${row.name}'s application` : row.username;
     setActionModal({
       title: `Delete ${label}?`,
       description: 'This permanently deletes the record and cannot be undone.',
@@ -436,6 +492,7 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
           if (kind === 'gallery') await deleteAdminGalleryItem(row.id);
           if (kind === 'rsvp') await deleteAdminRsvp(row.id);
           if (kind === 'alumni') await deleteAdminAlumnus(String(row.id).replace(/^alum-/, ''));
+          if (kind === 'application') await deleteAdminApplication(row.id);
           if (kind === 'account') await deleteAdminAccount(row.username);
           await refresh();
           showToast?.('Record deleted.', 'success');
@@ -625,9 +682,13 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
   const upcomingEvents = events.filter(event => !event.schedule || new Date(event.schedule) >= new Date()).length;
   const currentNav = NAV.find(item => item.id === activeSection) || NAV[0];
   const isSuperAdmin = adminRole === 'super_admin';
-  const canReview = isSuperAdmin || adminRole === 'reviewer';
+  const isHod = adminRole === 'department_hod';
+  const canReview = isSuperAdmin || adminRole === 'reviewer' || isHod;
   const canManageContent = isSuperAdmin || adminRole === 'content_manager';
   const visibleNav = NAV.filter(item => {
+    if (isHod) {
+      return ['dashboard', 'verified', 'unverified', 'users', 'analytics'].includes(item.id);
+    }
     if (item.id === 'access' || item.id === 'system') return isSuperAdmin;
     if (['unverified', 'bistaa'].includes(item.id)) return canReview;
     if (['events', 'gallery', 'departments'].includes(item.id)) return canManageContent;
@@ -693,32 +754,118 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
   const searchBox = <label className="admin-search"><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search records…" aria-label="Search records" /></label>;
 
   const renderDashboard = () => <>
-    {heading('Welcome back, BGI!', 'Your alumni network at a glance.', sectionAction)}
+    {heading(
+      isHod ? `Welcome, HOD ${adminDeptName || 'Department'}!` : 'Welcome back, BGI!',
+      isHod ? `Department overview and verification queue for ${adminDeptName || 'your department'}.` : 'Your alumni network at a glance.',
+      sectionAction
+    )}
     <div className="admin-metrics-grid">
-      <Metric tone="green" label="Verified Alumni" value={verifiedAlumni.length} caption="Visible in the directory" icon={Users} />
-      <Metric tone="blue" label="Not Verified Alumni" value={pending.length} caption="Waiting for profile review" icon={Clock3} />
-      <Metric tone="gold" label="Total Registered" value={totalRegistered} caption="All submitted alumni profiles" icon={GraduationCap} />
-      <Metric tone="teal" label="Upcoming Events" value={upcomingEvents} caption={`${rsvps.length} total reservations`} icon={CalendarDays} />
+      <Metric tone="green" label="Verified Alumni" value={verifiedAlumni.length} caption={isHod ? `Verified in ${adminDeptName || 'dept'}` : 'Visible in the directory'} icon={Users} />
+      <Metric tone="blue" label="Not Verified Alumni" value={pending.length} caption={isHod ? 'Waiting for your review' : 'Waiting for profile review'} icon={Clock3} />
+      <Metric tone="gold" label="Total Registered" value={totalRegistered} caption={isHod ? `All ${adminDeptName || 'dept'} alumni` : 'All submitted alumni profiles'} icon={GraduationCap} />
+      {!isHod && <Metric tone="teal" label="Upcoming Events" value={upcomingEvents} caption={`${rsvps.length} total reservations`} icon={CalendarDays} />}
     </div>
     <div className="admin-dashboard-grid">
-      <section className="admin-surface"><div className="admin-surface-heading"><div><h2>Needs attention</h2><p>Records waiting for an administrator</p></div></div>
-        <button className="admin-task-row" onClick={() => setActiveSection('unverified')}><span className="admin-task-icon admin-task-warn"><Clock3 size={18} /></span><span><b>Alumni profile verification</b><small>{pending.length} profiles to review</small></span><ChevronRight size={18} /></button>
-        <button className="admin-task-row" onClick={() => { setAppFilter('PENDING_VERIFICATION'); setActiveSection('bistaa'); }}><span className="admin-task-icon admin-task-blue"><ShieldCheck size={18} /></span><span><b>BISTAA payment review</b><small>{pendingApplications} applications to review</small></span><ChevronRight size={18} /></button>
+      <section className="admin-surface">
+        <div className="admin-surface-heading">
+          <div>
+            <h2>Needs attention</h2>
+            <p>{isHod ? 'Alumni profiles pending your verification' : 'Records waiting for an administrator'}</p>
+          </div>
+        </div>
+        <button className="admin-task-row" onClick={() => setActiveSection('unverified')}>
+          <span className="admin-task-icon admin-task-warn"><Clock3 size={18} /></span>
+          <span><b>Alumni profile verification</b><small>{pending.length} profiles to review</small></span>
+          <ChevronRight size={18} />
+        </button>
+        {!isHod && (
+          <button className="admin-task-row" onClick={() => { setAppFilter('PENDING_VERIFICATION'); setActiveSection('bistaa'); }}>
+            <span className="admin-task-icon admin-task-blue"><ShieldCheck size={18} /></span>
+            <span><b>BISTAA payment review</b><small>{pendingApplications} applications to review</small></span>
+            <ChevronRight size={18} />
+          </button>
+        )}
       </section>
-      <section className="admin-surface"><div className="admin-surface-heading"><div><h2>Network summary</h2><p>Membership and event activity</p></div><Activity size={20} /></div>
-        <div className="admin-summary-line"><span>Active BISTAA members</span><strong>{activeMembers}</strong></div>
-        <div className="admin-summary-line"><span>Event reservations</span><strong>{rsvps.length}</strong></div>
-        <div className="admin-summary-line"><span>Gallery items</span><strong>{gallery.length}</strong></div>
-        <div className="admin-summary-line"><span>Departments / courses</span><strong>{courses.length}</strong></div>
+      <section className="admin-surface">
+        <div className="admin-surface-heading">
+          <div>
+            <h2>{isHod ? 'Department summary' : 'Network summary'}</h2>
+            <p>{isHod ? 'Academic branch overview' : 'Membership and event activity'}</p>
+          </div>
+          <Activity size={20} />
+        </div>
+        {isHod ? (
+          <>
+            <div className="admin-summary-line"><span>Assigned Department</span><strong>{adminDeptName || 'Not assigned'}</strong></div>
+            <div className="admin-summary-line"><span>Verified Alumni</span><strong>{verifiedAlumni.length}</strong></div>
+            <div className="admin-summary-line"><span>Pending Verification</span><strong>{pending.length}</strong></div>
+            <div className="admin-summary-line"><span>Total Registered Students</span><strong>{totalRegistered}</strong></div>
+          </>
+        ) : (
+          <>
+            <div className="admin-summary-line"><span>Active BISTAA members</span><strong>{activeMembers}</strong></div>
+            <div className="admin-summary-line"><span>Event reservations</span><strong>{rsvps.length}</strong></div>
+            <div className="admin-summary-line"><span>Gallery items</span><strong>{gallery.length}</strong></div>
+            <div className="admin-summary-line"><span>Departments / courses</span><strong>{courses.length}</strong></div>
+          </>
+        )}
       </section>
     </div>
-    <section className="admin-surface admin-recent"><div className="admin-surface-heading"><div><h2>Recent BISTAA applications</h2><p>Latest membership submissions</p></div><button className="admin-text-btn" onClick={() => setActiveSection('bistaa')}>View all <ChevronRight size={16} /></button></div>
-      <Table columns={[
-        { key: 'name', label: 'Applicant' }, { key: 'enrollment', label: 'Enrollment' },
-        { key: 'submitted_at', label: 'Submitted' },
-        { key: 'status', label: 'Status', render: row => <span className={`admin-status admin-status-${row.status.toLowerCase()}`}>{row.status.replaceAll('_', ' ')}</span> },
-      ]} rows={apps.slice(0, 5)} empty="No applications have been submitted." />
-    </section>
+    {isHod ? (
+      <section className="admin-surface admin-recent">
+        <div className="admin-surface-heading">
+          <div>
+            <h2>Recent Alumni Registrations Waiting for Review</h2>
+            <p>Department students awaiting HOD verification</p>
+          </div>
+          <button className="admin-text-btn" onClick={() => setActiveSection('unverified')}>
+            View all ({pending.length}) <ChevronRight size={16} />
+          </button>
+        </div>
+        <Table
+          columns={[
+            { key: 'firstname', label: 'Student / Alumni', render: row => <span className="admin-person"><b>{row.firstname} {row.lastname}</b><small>{row.email || row.enroll_no}</small></span> },
+            { key: 'enroll_no', label: 'Enrollment' },
+            { key: 'course', label: 'Department', render: row => row.course || adminDeptName },
+            { key: 'batch', label: 'Batch' },
+            { key: 'action', label: 'Action', render: row => (
+              <div className="admin-row-actions">
+                <button className="admin-primary-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => verify(row)}>
+                  <Check size={14} /> Verify
+                </button>
+                <button className="admin-secondary-btn admin-small-btn" onClick={() => setActiveSection('unverified')}>
+                  Review
+                </button>
+              </div>
+            )},
+          ]}
+          rows={pending.slice(0, 5)}
+          empty="No alumni profiles are waiting for verification in your department."
+        />
+      </section>
+    ) : (
+      <section className="admin-surface admin-recent">
+        <div className="admin-surface-heading">
+          <div>
+            <h2>Recent BISTAA applications</h2>
+            <p>Latest membership submissions</p>
+          </div>
+          <button className="admin-text-btn" onClick={() => setActiveSection('bistaa')}>
+            View all <ChevronRight size={16} />
+          </button>
+        </div>
+        <Table
+          columns={[
+            { key: 'name', label: 'Applicant' },
+            { key: 'enrollment', label: 'Enrollment' },
+            { key: 'submitted_at', label: 'Submitted' },
+            { key: 'status', label: 'Status', render: row => <span className={`admin-status admin-status-${row.status.toLowerCase()}`}>{row.status.replaceAll('_', ' ')}</span> },
+          ]}
+          rows={apps.slice(0, 5)}
+          empty="No applications have been submitted."
+        />
+      </section>
+    )}
   </>;
 
   const renderVerified = () => <>
@@ -777,7 +924,20 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
       { key: 'upi_transaction_id', label: 'Payment UTR' }, { key: 'submitted_at', label: 'Submitted' },
       { key: 'slip', label: 'Payment slip', render: row => row.has_transaction_slip ? <button className="admin-text-btn" onClick={() => onOpenSlip?.({ id: row.id, appId: row.id, name: row.name, enrollment: row.enrollment, branch: row.branch, college: row.college, utr: row.upi_transaction_id, status: row.status })}>View slip</button> : 'Not uploaded' },
       { key: 'status', label: 'Status', render: row => <span className={`admin-status admin-status-${row.status.toLowerCase()}`}>{row.status.replaceAll('_', ' ')}</span> },
-      { key: 'actions', label: 'Actions', render: row => <div className="admin-row-actions">{canReview && row.status === 'PENDING_VERIFICATION' && <><button className="admin-primary-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => review(row, 'ACTIVE')}><Check size={14} /> Approve</button><button className="admin-danger-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => review(row, 'REJECTED')}><X size={14} /> Reject</button></>}{row.status === 'ACTIVE' && <button className="admin-secondary-btn admin-small-btn" onClick={() => onOpenDigitalPass?.(row)}>View pass</button>}{canReview && row.status === 'REJECTED' && <button className="admin-secondary-btn admin-small-btn" onClick={() => review(row, 'ACTIVE')}>Approve</button>}</div> },
+      { key: 'actions', label: 'Actions', render: row => <div className="admin-row-actions">
+        {canReview && row.status === 'PENDING_VERIFICATION' && <>
+          <button className="admin-primary-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => review(row, 'ACTIVE')}><Check size={14} /> Approve</button>
+          <button className="admin-danger-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => review(row, 'REJECTED')}><X size={14} /> Reject</button>
+        </>}
+        {row.status === 'ACTIVE' && <>
+          <button className="admin-secondary-btn admin-small-btn" onClick={() => onOpenDigitalPass?.(row)}>View pass</button>
+          {canReview && <button className="admin-danger-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => review(row, 'REJECTED')}><X size={14} /> Reject</button>}
+        </>}
+        {canReview && row.status === 'REJECTED' && <>
+          <button className="admin-secondary-btn admin-small-btn" onClick={() => review(row, 'ACTIVE')}>Approve</button>
+          <button className="admin-danger-btn admin-small-btn" onClick={() => removeRecord('application', row)}><Trash2 size={14} /> Delete</button>
+        </>}
+      </div> },
     ]} rows={filteredApps} empty="No membership applications match this filter." />
   </>;
 
@@ -845,13 +1005,86 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
   </>;
 
   const renderAccess = () => <>
-    {heading('Admin Accounts', 'Create accounts and assign only the access each teammate needs.', <div className="admin-heading-actions"><button className="admin-primary-btn" onClick={() => setDialog({ kind: 'account', title: 'Create admin account', description: 'Use the least-privileged role that matches the teammate’s work.', fields: [{ name: 'username', label: 'Username', required: true }, { name: 'password', label: 'Password (minimum 8 characters)', type: 'password', minLength: 8, required: true }, { name: 'role', label: 'Role', type: 'select', options: [{ value: 'reviewer', label: 'Reviewer' }, { value: 'content_manager', label: 'Content manager' }, { value: 'read_only', label: 'Read only' }, { value: 'super_admin', label: 'Super admin' }] }], initial: { role: 'reviewer' } })}><Users size={16} /> Add administrator</button>{sectionAction}</div>)}
+    {heading('Admin Accounts', 'Create accounts and assign only the access each teammate needs.', <div className="admin-heading-actions"><button className="admin-primary-btn" onClick={() => setDialog({
+      kind: 'account',
+      title: 'Create admin account',
+      description: 'Use Department HOD for faculty who should only verify their department’s students, or another role as needed.',
+      fields: [
+        { name: 'username', label: 'Username', required: true },
+        { name: 'password', label: 'Password (minimum 8 characters)', type: 'password', minLength: 8, required: true },
+        {
+          name: 'role',
+          label: 'Role',
+          type: 'select',
+          options: [
+            { value: 'department_hod', label: 'Department HOD (Scoped to Department)' },
+            { value: 'reviewer', label: 'Reviewer' },
+            { value: 'content_manager', label: 'Content manager' },
+            { value: 'read_only', label: 'Read only' },
+            { value: 'super_admin', label: 'Super admin' },
+          ],
+        },
+        {
+          name: 'department_id',
+          label: 'Assigned Department (Required for HOD)',
+          type: 'select',
+          options: [
+            { value: '', label: '-- Select Department (HOD) --' },
+            ...courses.map(course => ({ value: String(course.id), label: course.course })),
+          ],
+        },
+      ],
+      initial: { role: 'department_hod', department_id: courses[0] ? String(courses[0].id) : '' },
+    })}><Users size={16} /> Add administrator</button>{sectionAction}</div>)}
     <div className="admin-access-note"><ShieldCheck size={18} /><span>Passwords are securely hashed before storage. At least one admin account must remain active.</span></div>
     <Table mobileCards columns={[
-      { key: 'username', label: 'Administrator', render: row => <span className="admin-person"><b>{row.username}</b><small>{row.is_current ? 'Signed-in account' : 'Administrator account'}</small></span> },
-      { key: 'role', label: 'Role', render: row => row.is_current ? <span className="admin-status admin-status-active">{row.role.replaceAll('_', ' ')}</span> : <select aria-label={`Role for ${row.username}`} value={row.role} onChange={event => changeRole(row, event.target.value)}><option value="reviewer">Reviewer</option><option value="content_manager">Content manager</option><option value="read_only">Read only</option><option value="super_admin">Super admin</option></select> },
+      { key: 'username', label: 'Administrator', render: row => <span className="admin-person"><b>{row.username}</b><small>{row.is_current ? 'Signed-in account' : (row.role === 'department_hod' ? 'Department HOD' : 'Administrator account')}</small></span> },
+      { key: 'role', label: 'Role', render: row => {
+        const roleLabels = {
+          super_admin: 'Super admin',
+          department_hod: 'Department HOD',
+          reviewer: 'Reviewer',
+          content_manager: 'Content manager',
+          read_only: 'Read only',
+        };
+        return <span className={`admin-status ${row.role === 'super_admin' ? 'admin-status-active' : row.role === 'department_hod' ? 'bg-sky-50 text-sky-800 border-sky-300' : 'admin-status-pending_verification'}`}>{roleLabels[row.role] || row.role}</span>;
+      }},
+      { key: 'department', label: 'Assigned Department', render: row => row.role === 'department_hod' ? (row.department_name ? <span className="font-semibold text-sky-800 bg-sky-50 px-2 py-0.5 rounded text-xs border border-sky-200">{row.department_name}</span> : <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-xs border border-amber-200 font-medium">Unassigned</span>) : <span className="text-slate-400 text-xs">All Departments</span> },
       { key: 'created_at', label: 'Created' },
-      { key: 'actions', label: 'Account controls', render: row => <div className="admin-row-actions"><button className="admin-secondary-btn admin-small-btn" onClick={() => setDialog({ kind: 'password', username: row.username, title: 'Reset administrator password', description: `Set a new sign-in password for ${row.username}.`, fields: [{ name: 'password', label: 'New password (minimum 8 characters)', type: 'password', minLength: 8, required: true }] })}>Reset password</button>{!row.is_current && <button className="admin-danger-btn admin-small-btn" onClick={() => removeRecord('account', row)}>Remove</button>}</div> },
+      { key: 'actions', label: 'Account controls', render: row => <div className="admin-row-actions">
+        {!row.is_current && <button className="admin-secondary-btn admin-small-btn" onClick={() => setDialog({
+          kind: 'account_role',
+          username: row.username,
+          title: `Edit access: ${row.username}`,
+          description: 'Change role or assign academic department for this account.',
+          fields: [
+            {
+              name: 'role',
+              label: 'Role',
+              type: 'select',
+              options: [
+                { value: 'department_hod', label: 'Department HOD (Scoped to Department)' },
+                { value: 'reviewer', label: 'Reviewer' },
+                { value: 'content_manager', label: 'Content manager' },
+                { value: 'read_only', label: 'Read only' },
+                { value: 'super_admin', label: 'Super admin' },
+              ],
+            },
+            {
+              name: 'department_id',
+              label: 'Assigned Department (Required for HOD)',
+              type: 'select',
+              options: [
+                { value: '', label: '-- Select Department (HOD) --' },
+                ...courses.map(course => ({ value: String(course.id), label: course.course })),
+              ],
+            },
+          ],
+          initial: { role: row.role, department_id: row.department_id ? String(row.department_id) : '' },
+        })}>Edit access</button>}
+        <button className="admin-secondary-btn admin-small-btn" onClick={() => setDialog({ kind: 'password', username: row.username, title: 'Reset administrator password', description: `Set a new sign-in password for ${row.username}.`, fields: [{ name: 'password', label: 'New password (minimum 8 characters)', type: 'password', minLength: 8, required: true }] })}>Reset password</button>
+        {!row.is_current && <button className="admin-danger-btn admin-small-btn" onClick={() => removeRecord('account', row)}>Remove</button>}
+      </div> },
     ]} rows={adminAccounts} empty="No admin accounts were found." />
   </>;
 
@@ -888,11 +1121,11 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
           <p className="admin-nav-label">WORKSPACE</p>
           {visibleNav.map(item => { const Icon = item.icon; return <button key={item.id} title={sidebarCollapsed ? item.label : undefined} aria-label={item.label} className={activeSection === item.id ? 'is-active' : ''} onClick={() => { setActiveSection(item.id); setQuery(''); setMobileNavOpen(false); }}><Icon size={18} /><span>{item.label}</span>{item.id === 'unverified' && pending.length > 0 && <b className="admin-nav-count">{pending.length}</b>}</button>; })}
         </nav>
-        <div className="admin-sidebar-bottom"><span className="admin-session-dot" /><span><b>Administrator</b><small>Secure session active</small></span><button aria-label="Sign out" title="Sign out" onClick={logout}><LogOut size={17} /></button></div>
+        <div className="admin-sidebar-bottom"><span className="admin-session-dot" /><span><b>{isHod ? `HOD · ${adminDeptName || 'Dept'}` : 'Administrator'}</b><small>{isHod ? 'Department Portal' : 'Secure session active'}</small></span><button aria-label="Sign out" title="Sign out" onClick={logout}><LogOut size={17} /></button></div>
       </aside>
       {mobileNavOpen && <button className="admin-mobile-scrim" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <section className="admin-main-area">
-        <header className="admin-topbar"><button className="admin-mobile-menu" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu size={22} /></button><button className="admin-desktop-collapse" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={toggleSidebar}>{sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}</button><div className="admin-top-brand"><span className="admin-brand-mark admin-brand-logo"><img src={BGI_BHOPAL_LOGO} alt="BGI Bhopal logo" /></span><b>BGI ALUMENTO</b></div><div className="admin-breadcrumb"><span>Admin</span><ChevronRight size={15} /><b>{currentNav.label}</b></div><div className="admin-top-actions"><span className="admin-live-status"><i /> Local data connected</span><div className="admin-notification-wrap"><button className={`admin-refresh-icon${visibleNotifications.length ? ' has-notices' : ''}`} aria-label={`${visibleNotifications.reduce((total, item) => total + item.count, 0)} unread admin notifications`} onClick={() => setShowNotifications(value => !value)}><Bell size={17} />{visibleNotifications.length > 0 && <b>{visibleNotifications.reduce((total, item) => total + item.count, 0)}</b>}</button>{showNotifications && <div className="admin-notification-popover"><div className="admin-notification-title"><span>Notifications</span><button onClick={() => setShowNotifications(false)} aria-label="Close notifications"><X size={15} /></button></div>{visibleNotifications.length ? visibleNotifications.map(item => <div className="admin-notification-item" key={item.id}><button className="admin-notification-open" onClick={() => openNotification(item)}><span>{item.title}</span><b>{item.count}</b></button><button className="admin-notification-read" title="Mark as read" aria-label={`Mark ${item.title} as read`} onClick={() => markNotificationRead(item)}><Check size={15} /></button></div>) : <p className="admin-notifications-empty">You’re all caught up.</p>}</div>}</div><button className="admin-refresh-icon" onClick={refresh} aria-label="Refresh data" disabled={loading}><RefreshCw size={17} /></button></div></header>
+        <header className="admin-topbar"><button className="admin-mobile-menu" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu size={22} /></button><button className="admin-desktop-collapse" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={toggleSidebar}>{sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}</button><div className="admin-top-brand"><span className="admin-brand-mark admin-brand-logo"><img src={BGI_BHOPAL_LOGO} alt="BGI Bhopal logo" /></span><b>BGI ALUMENTO</b></div><div className="admin-breadcrumb"><span>Admin</span>{isHod && adminDeptName && <span className="admin-dept-tag font-semibold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 text-xs">Dept: {adminDeptName}</span>}<ChevronRight size={15} /><b>{currentNav.label}</b></div><div className="admin-top-actions">{isHod && adminDeptName && <span className="admin-hod-pill hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-sky-800 bg-sky-50 border border-sky-200 rounded-lg"><GraduationCap size={14} className="text-sky-600" /><span>HOD: {adminDeptName}</span></span>}<div className="admin-notification-wrap"><button className={`admin-refresh-icon${visibleNotifications.length ? ' has-notices' : ''}`} aria-label={`${visibleNotifications.reduce((total, item) => total + item.count, 0)} unread admin notifications`} onClick={() => setShowNotifications(value => !value)}><Bell size={17} />{visibleNotifications.length > 0 && <b>{visibleNotifications.reduce((total, item) => total + item.count, 0)}</b>}</button>{showNotifications && <div className="admin-notification-popover"><div className="admin-notification-title"><span>Notifications</span><button onClick={() => setShowNotifications(false)} aria-label="Close notifications"><X size={15} /></button></div>{visibleNotifications.length ? visibleNotifications.map(item => <div className="admin-notification-item" key={item.id}><button className="admin-notification-open" onClick={() => openNotification(item)}><span>{item.title}</span><b>{item.count}</b></button><button className="admin-notification-read" title="Mark as read" aria-label={`Mark ${item.title} as read`} onClick={() => markNotificationRead(item)}><Check size={15} /></button></div>) : <p className="admin-notifications-empty">You’re all caught up.</p>}</div>}</div><button className="admin-refresh-icon" onClick={refresh} aria-label="Refresh data" disabled={loading}><RefreshCw size={17} /></button></div></header>
         <div className="admin-page-content">{loading && <div className="admin-loading-bar" role="status">Updating records…</div>}{(contentBySection[activeSection] || renderDashboard)()}</div>
         <footer className="admin-footer">BGI Alumento administration <span>•</span> Changes are recorded in the local database <span>•</span> Designed &amp; Developed by <a href="https://devlinkhub.in" target="_blank" rel="noopener noreferrer"><strong>DevLinkHub Team</strong></a></footer>
       </section>
