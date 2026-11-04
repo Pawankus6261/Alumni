@@ -201,6 +201,7 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
   const [activeSection, setActiveSection] = useState('dashboard');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('bgi_admin_sidebar_collapsed') === 'true');
+  const [hoveredNav, setHoveredNav] = useState(null);
   const [apps, setApps] = useState([]);
   const [activeMemberCount, setActiveMemberCount] = useState(0);
   const [bistaaMembers, setBistaaMembers] = useState([]);
@@ -294,10 +295,13 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
     setAdminRole(''); setAdminDeptId(null); setAdminDeptName('');
   };
 
-  const toggleSidebar = () => setSidebarCollapsed(collapsed => {
-    localStorage.setItem('bgi_admin_sidebar_collapsed', String(!collapsed));
-    return !collapsed;
-  });
+  const toggleSidebar = () => {
+    setHoveredNav(null);
+    setSidebarCollapsed(collapsed => {
+      localStorage.setItem('bgi_admin_sidebar_collapsed', String(!collapsed));
+      return !collapsed;
+    });
+  };
 
   const handleLogin = async (event) => {
     event.preventDefault(); setLoginError(''); setLoading(true);
@@ -794,6 +798,12 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
   const sectionAction = <button className="admin-secondary-btn" onClick={refresh} disabled={loading}><RefreshCw size={16} /> Refresh</button>;
   const searchBox = <label className="admin-search"><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search records…" aria-label="Search records" /></label>;
 
+  const updateNavTooltip = (event, label) => {
+    if (!sidebarCollapsed) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setHoveredNav({ label, left: bounds.right + 9, top: bounds.top + bounds.height / 2 });
+  };
+
   const renderDashboard = () => <>
     {heading(
       isHod ? `Welcome, HOD ${adminDeptName || 'Department'}!` : 'Welcome back, BGI!',
@@ -1164,10 +1174,11 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
         <div className="admin-brand"><span className="admin-brand-mark admin-brand-logo"><img src={BGI_BHOPAL_LOGO} alt="BGI Bhopal logo" /></span><span><b>BGI ALUMENTO</b><small>ADMIN CONSOLE</small></span><button className="admin-mobile-close" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}><X size={20} /></button></div>
         <nav className="admin-side-nav" aria-label="Administration sections">
           <p className="admin-nav-label">WORKSPACE</p>
-          {visibleNav.map(item => { const Icon = item.icon; return <button key={item.id} title={sidebarCollapsed ? item.label : undefined} aria-label={item.label} className={activeSection === item.id ? 'is-active' : ''} onClick={() => { setActiveSection(item.id); setQuery(''); setMobileNavOpen(false); }}><Icon size={18} /><span>{item.label}</span>{item.id === 'unverified' && pending.length > 0 && <b className="admin-nav-count">{pending.length}</b>}</button>; })}
+          {visibleNav.map(item => { const Icon = item.icon; return <button key={item.id} aria-label={item.label} className={activeSection === item.id ? 'is-active' : ''} onMouseEnter={event => updateNavTooltip(event, item.label)} onMouseLeave={() => setHoveredNav(null)} onFocus={event => updateNavTooltip(event, item.label)} onBlur={() => setHoveredNav(null)} onClick={() => { setHoveredNav(null); setActiveSection(item.id); setQuery(''); setMobileNavOpen(false); }}><Icon size={18} /><span>{item.label}</span>{item.id === 'unverified' && pending.length > 0 && <b className="admin-nav-count">{pending.length}</b>}</button>; })}
         </nav>
         <div className="admin-sidebar-bottom"><span className="admin-session-dot" /><span><b>{isHod ? `HOD · ${adminDeptName || 'Dept'}` : 'Administrator'}</b><small>{isHod ? 'Department Portal' : 'Secure session active'}</small></span><button aria-label="Sign out" title="Sign out" onClick={logout}><LogOut size={17} /></button></div>
       </aside>
+      {sidebarCollapsed && hoveredNav && <div className="admin-nav-tooltip" role="tooltip" style={{ left: hoveredNav.left, top: hoveredNav.top }}>{hoveredNav.label}</div>}
       {mobileNavOpen && <button className="admin-mobile-scrim" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <section className="admin-main-area">
         <header className="admin-topbar"><button className="admin-mobile-menu" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu size={22} /></button><button className="admin-desktop-collapse" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={toggleSidebar}>{sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}</button><div className="admin-top-brand"><span className="admin-brand-mark admin-brand-logo"><img src={BGI_BHOPAL_LOGO} alt="BGI Bhopal logo" /></span><b>BGI ALUMENTO</b></div><div className="admin-breadcrumb"><span>Admin</span>{isHod && adminDeptName && <span className="admin-dept-tag font-semibold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 text-xs">Dept: {adminDeptName}</span>}<ChevronRight size={15} /><b>{currentNav.label}</b></div><div className="admin-top-actions">{isHod && adminDeptName && <span className="admin-hod-pill hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-sky-800 bg-sky-50 border border-sky-200 rounded-lg"><GraduationCap size={14} className="text-sky-600" /><span>HOD: {adminDeptName}</span></span>}<div className="admin-notification-wrap"><button className={`admin-refresh-icon${visibleNotifications.length ? ' has-notices' : ''}`} aria-label={`${visibleNotifications.reduce((total, item) => total + item.count, 0)} unread admin notifications`} onClick={() => setShowNotifications(value => !value)}><Bell size={17} />{visibleNotifications.length > 0 && <b>{visibleNotifications.reduce((total, item) => total + item.count, 0)}</b>}</button>{showNotifications && <div className="admin-notification-popover"><div className="admin-notification-title"><span>Notifications</span><button onClick={() => setShowNotifications(false)} aria-label="Close notifications"><X size={15} /></button></div>{visibleNotifications.length ? visibleNotifications.map(item => <div className="admin-notification-item" key={item.id}><button className="admin-notification-open" onClick={() => openNotification(item)}><span>{item.title}</span><b>{item.count}</b></button><button className="admin-notification-read" title="Mark as read" aria-label={`Mark ${item.title} as read`} onClick={() => markNotificationRead(item)}><Check size={15} /></button></div>) : <p className="admin-notifications-empty">You’re all caught up.</p>}</div>}</div><button className="admin-refresh-icon" onClick={refresh} aria-label="Refresh data" disabled={loading}><RefreshCw size={17} /></button></div></header>

@@ -5036,6 +5036,7 @@ main > div { width: 100%; max-width: 100%; min-width: 0; }
 .admin-side-nav button > svg { flex: 0 0 auto; color: #a9bfd5; }
 .admin-side-nav button.is-active > svg { color: #e2bd83; }
 .admin-side-nav button span { min-width: 0; }
+.admin-nav-tooltip { position: fixed; z-index: 1600; display: inline-block; width: max-content !important; max-width: min(240px, calc(100vw - 90px)); right: auto !important; transform: translateY(-50%); padding: 7px 10px; border: 1px solid #ffffff26; border-radius: 7px; color: #fff; background: #0c223b; box-shadow: 0 5px 16px #07182b45; font-size: .76rem; font-weight: 700; line-height: 1.2; white-space: nowrap; pointer-events: none; }
 .admin-nav-count { margin-left: auto; padding: 2px 7px; border-radius: 99px; color: #f8e4bd; background: #ffffff1c; font-size: .68rem; }
 .admin-sidebar-bottom { display: flex; align-items: center; gap: 10px; margin: auto 13px 14px; padding: 13px 11px; border-top: 1px solid #ffffff1b; }
 .admin-session-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #62d19c; box-shadow: 0 0 0 4px #62d19c20; }
