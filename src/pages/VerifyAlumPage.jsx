@@ -33,6 +33,7 @@ export default function VerifyAlumPage({
   onOpenDigitalPass,
   setView,
   showToast,
+  qrOnly = false,
 }) {
   const [searchInput, setSearchInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -43,6 +44,7 @@ export default function VerifyAlumPage({
   const [copiedCode, setCopiedCode] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
   const searchInputRef = useRef(null);
+  const autoOpenedPassRef = useRef('');
 
   // Read search query / query params on initial mount and on popstate
   useEffect(() => {
@@ -73,6 +75,15 @@ export default function VerifyAlumPage({
     window.addEventListener('popstate', parseUrlAndVerify);
     return () => window.removeEventListener('popstate', parseUrlAndVerify);
   }, []);
+
+  useEffect(() => {
+    if (!qrOnly) return undefined;
+    const robots = document.createElement('meta');
+    robots.name = 'robots';
+    robots.content = 'noindex, nofollow';
+    document.head.appendChild(robots);
+    return () => robots.remove();
+  }, [qrOnly]);
 
   // Generate verified QR code whenever verified record changes
   useEffect(() => {
@@ -290,6 +301,19 @@ export default function VerifyAlumPage({
   const alum = verifiedData?.alumnus;
   const isMember = Boolean(alum?.is_bistaa_member || alum?.bistaa_id || verifiedData?.verification_type === 'BISTAA_LIFETIME_MEMBER');
 
+  useEffect(() => {
+    if (!qrOnly || !isMember || !alum || !onOpenDigitalPass) return;
+    const identity = String(alum.membership_id || alum.bistaa_id || alum.enrollment || alum.enroll_no || '');
+    if (!identity || autoOpenedPassRef.current === identity) return;
+    autoOpenedPassRef.current = identity;
+    onOpenDigitalPass({
+      ...alum,
+      name: alum.name || `${alum.firstname || ''} ${alum.lastname || ''}`.trim(),
+      branch: alum.course || alum.branch || '',
+      membership_id: alum.membership_id || alum.bistaa_id || '',
+    });
+  }, [qrOnly, isMember, alum, onOpenDigitalPass]);
+
   return (
     <div style={{ minHeight: '85vh', background: 'var(--color-neutral-subtle, #f8fafc)' }}>
       {/* ─── Hero Header ─── */}
@@ -297,21 +321,22 @@ export default function VerifyAlumPage({
         <div className="container" style={{ textAlign: 'center' }}>
           <div className="page-hero-eyebrow" style={{ justifyContent: 'center' }}>
             <ShieldCheck size={16} />
-            Official Credential Authentication System
+            {qrOnly ? 'BISTAA Member Pass Verification' : 'Official Credential Authentication System'}
           </div>
           <h1 className="page-hero-title" style={{ fontSize: '2.25rem', marginBottom: '0.75rem' }}>
-            BGI Alumni &amp; BISTAA Credential Verification
+            {qrOnly ? 'Verify Member Pass' : 'BGI Alumni &amp; BISTAA Credential Verification'}
           </h1>
           <p className="page-hero-desc" style={{ maxWidth: 680, margin: '0 auto' }}>
-            Real-time public verification registry for graduates and lifetime members of the
-            Bansal Institute of Science &amp; Technology (BIST) Alumni Association (BISTAA).
+            {qrOnly
+              ? 'Scan a member pass QR code to confirm its registered alumni details.'
+              : <>Real-time verification for graduates and lifetime members of the Bansal Institute of Science &amp; Technology (BIST) Alumni Association (BISTAA).</>}
           </p>
         </div>
       </section>
 
       <div className="container" style={{ maxWidth: 940, marginTop: '-1.5rem', marginBottom: '3.5rem' }}>
         {/* ─── Search Box Card ─── */}
-        <div
+        {!qrOnly && <div
           style={{
             background: '#ffffff',
             borderRadius: '12px',
@@ -384,7 +409,14 @@ export default function VerifyAlumPage({
               })}
             </div>
           )}
-        </div>
+        </div>}
+
+        {qrOnly && !loading && !hasSearched && (
+          <div role="status" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+            <QrCode size={32} style={{ margin: '0 auto 0.75rem', color: '#17365b' }} />
+            <p style={{ margin: 0 }}>Open this page by scanning a BISTAA member pass QR code.</p>
+          </div>
+        )}
 
         {/* ─── Loading State ─── */}
         {loading && (
@@ -454,7 +486,7 @@ export default function VerifyAlumPage({
               {errorMessage || 'No official verified record was located matching the supplied identifier.'}
             </p>
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button
+              {!qrOnly && <button
                 className="btn btn-secondary"
                 onClick={() => {
                   setSearchInput('');
@@ -462,7 +494,7 @@ export default function VerifyAlumPage({
                 }}
               >
                 Try Another Search
-              </button>
+              </button>}
               <button
                 className="btn btn-primary"
                 onClick={() => setView('status')}

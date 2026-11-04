@@ -5,10 +5,11 @@ import {
   Pencil, ShieldCheck, TicketCheck, Trash2, Users, X, XCircle,
 } from 'lucide-react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
+import ImageUploadField from '../components/ImageUploadField';
 import Pagination from '../components/Pagination';
 import { BGI_BHOPAL_LOGO } from '../brand';
 import {
-  adminLogin, changeAdminRole, commitAlumniImport, createAdminAccount, createAdminEvent, createAdminGalleryItem, createDatabaseBackup, createDepartment, getAdminAlumni,
+  adminLogin, changeAdminRole, commitAlumniImport, createAdminAccount, createAdminEvent, createAdminGalleryItem, createDatabaseBackup, createDepartment, getAdminAlumni, uploadAdminEventBanner,
   deleteAdminAccount, deleteAdminEvent, deleteAdminGalleryItem, deleteAdminRsvp, deleteDepartment, downloadSavedBackup,
   getAdminAccounts, getAdminApplications, getAdminBistaaMembers, getAdminBackups, getAdminRsvps, getCourses, getEvents, getGallery,
   getAdminAnalytics, getAdminAudit, getAdminNotifications, getPendingAlumni, previewAlumniImport, rejectAdminAlumnus, resetAdminAccountPassword, restoreDatabaseBackup, reviewAdminApplication, deleteAdminApplication, setAlumnusVerification, deleteAdminAlumnus,
@@ -42,7 +43,7 @@ function saveCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
-function AdminDialog({ dialog, onClose, onSubmit, busy }) {
+function AdminDialog({ dialog, onClose, onSubmit, busy, showToast }) {
   const [values, setValues] = useState(dialog?.initial || {});
   const [photoTouched, setPhotoTouched] = useState(false);
   const [photoPreview, setPhotoPreview] = useState('');
@@ -67,7 +68,7 @@ function AdminDialog({ dialog, onClose, onSubmit, busy }) {
         <ImageWithPlaceholder src={photoPreview || values.photo_url} alt="Profile photo preview" variant="avatar" className="admin-profile-photo-preview" placeholderLabel={`${values.firstname?.[0] || values.name?.[0] || ''}${values.lastname?.[0] || values.name?.split(/\s+/)[1]?.[0] || ''}`.toUpperCase() || 'Photo'} />
         <div><b>{photoPreview ? 'New photo preview' : values.photo_url ? 'Current profile photo' : 'No profile photo yet'}</b><span>Upload a JPG, PNG, or WebP image (max 5 MB), or paste an image URL.</span></div>
       </div>}
-      <div className="admin-dialog-fields">{dialog.fields.map(field => <label className={`admin-dialog-field${field.wide ? ' admin-field-wide' : ''}`} key={field.name}>{field.label}
+      <div className="admin-dialog-fields">{dialog.fields.filter(field => !field.visibleWhen || field.visibleWhen(values)).map(field => <label className={`admin-dialog-field${field.wide ? ' admin-field-wide' : ''}`} key={field.name}>{field.label}
         {field.type === 'textarea' ? <textarea required={field.required !== false} rows={4} value={values[field.name] || ''} onChange={event => change(field.name, event.target.value)} />
           : field.type === 'category_picker' ? (
             <div className="admin-category-picker" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
@@ -123,6 +124,20 @@ function AdminDialog({ dialog, onClose, onSubmit, busy }) {
           : <input type={field.type || 'text'} required={field.required !== false} accept={field.accept} minLength={field.minLength} value={field.type === 'file' ? undefined : (values[field.name] || '')} onChange={event => { const value = field.type === 'file' ? event.target.files?.[0] : event.target.value; change(field.name, value); if (field.name === 'avatar' || field.name === 'photo_url') setPhotoTouched(true); }} />}
         {field.help && <small className="admin-dialog-help">{field.help}</small>}
       </label>)}</div>
+      {dialog.kind === 'event' && <div className="admin-event-banner-upload">
+        <span className="admin-dialog-field-label">Upload banner image</span>
+        <ImageUploadField
+          id="admin-event-banner-upload"
+          value={values.bannerPreview || values.banner || ''}
+          variant="document"
+          title="Choose event banner"
+          description="JPG, PNG or WebP · Up to 5 MB"
+          maxSizeMB={5}
+          onChange={({ file, preview }) => setValues(current => ({ ...current, banner_file: file, bannerPreview: preview }))}
+          onRemove={() => setValues(current => ({ ...current, banner_file: null, bannerPreview: '', banner: '' }))}
+          onError={message => showToast?.(message, 'error')}
+        />
+      </div>}
       <div className="admin-dialog-actions"><button type="button" className="admin-secondary-btn" onClick={onClose}>Cancel</button><button type="submit" className="admin-primary-btn" disabled={busy}>{busy ? 'Saving…' : dialog.submitLabel || 'Save changes'}</button></div>
     </form>
   </div>;
@@ -326,10 +341,6 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
     } finally { setActionModalBusy(false); }
   };
 
-  const verify = async (person) => {
-    await setVerification(person, true);
-  };
-
   const executeApplicationReview = async (app, status, reason = '') => {
     setActionId(String(app.id));
     try {
@@ -388,11 +399,20 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
     let successMessage;
     try {
       if (dialog.kind === 'event') {
+        let bannerUrl = values.banner || '';
+        if (values.banner_file) {
+          const uploadedBanner = await uploadAdminEventBanner(values.banner_file);
+          bannerUrl = uploadedBanner.url;
+        }
         const payload = {
           title: values.title.trim(),
+          subtitle: (values.subtitle || '').trim(),
           description: values.description || '',
           schedule: values.schedule,
-          banner: values.banner || '',
+          banner: bannerUrl,
+          venue: (values.venue || '').trim(),
+          event_type: values.event_type || 'HYBRID',
+          highlights: values.highlights || '',
           registration_open: values.registration_open === 'true' || values.registration_open === true,
         };
         if (dialog.id) await updateAdminEvent(dialog.id, payload); else await createAdminEvent(payload);
@@ -450,6 +470,10 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
           };
           const result = await updateAdminAlumnus(dialog.id, payload);
           if (result.membership_synced) successMessage = 'Alumni profile and linked BISTAA member synced.';
+        }
+        if (dialog.verifyAfterSave) {
+          await setAlumnusVerification(dialog.id, true);
+          successMessage = 'Alumni profile updated and verified.';
         }
       } else if (dialog.kind === 'bistaa-member') {
         const { avatar, photo_url: photoUrl, ...memberValues } = values;
@@ -559,20 +583,35 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
 
   const openEventDialog = (event = null) => setDialog({ kind: 'event', id: event?.id, title: event ? 'Edit event' : 'Create event', description: 'Manage the event details shown on the public events page.', success: event ? 'Event updated.' : 'Event created.', fields: [
     { name: 'title', label: 'Event name', required: true },
+    { name: 'subtitle', label: 'Short heading / subtitle', required: false },
     { name: 'schedule', label: 'Date and time', type: 'datetime-local', required: true },
+    { name: 'event_type', label: 'Event format', type: 'select', required: true, options: [
+      { value: 'HYBRID', label: 'Hybrid' },
+      { value: 'CAMPUS', label: 'On campus' },
+      { value: 'VIRTUAL', label: 'Virtual' },
+    ] },
     { name: 'registration_open', label: 'RSVP / Registration Status', type: 'select', required: true, options: [
       { value: 'true', label: 'Open (Accept RSVPs)' },
       { value: 'false', label: 'Closed (Disable RSVPs)' },
     ] },
     { name: 'description', label: 'Description', type: 'textarea', wide: true, required: false },
+    { name: 'venue', label: 'Venue / meeting link', wide: true, required: false },
+    { name: 'highlights', label: 'Event highlights (one per line)', type: 'textarea', wide: true, required: false, help: 'Add each agenda item or highlight on a separate line.' },
     { name: 'banner', label: 'Banner image URL', wide: true, required: false },
   ], initial: event ? {
     title: event.title,
+    subtitle: event.subtitle || 'Official BGI Alumni Gathering',
     description: event.description,
     schedule: event.schedule?.replace(' ', 'T').slice(0, 16),
     banner: event.image || '',
+    venue: event.venue || 'Bansal Institute of Science & Technology, Bhopal',
+    event_type: event.type || 'HYBRID',
+    highlights: Array.isArray(event.highlights) ? event.highlights.join('\n') : '',
     registration_open: String(event.registration_open !== false),
   } : {
+    subtitle: 'Official BGI Alumni Gathering',
+    venue: 'Bansal Institute of Science & Technology, Bhopal',
+    event_type: 'HYBRID',
     schedule: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
     registration_open: 'true',
   } });
@@ -582,7 +621,9 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
     { name: 'about', label: 'Description', type: 'textarea', wide: true, required: false },
   ], initial: course ? { course: course.course, about: course.about } : {} });
 
-  const openAlumniDialog = person => setDialog({ kind: 'alumni', id: person.id, photoEditor: true, title: 'Edit alumni profile', description: `Update the directory record for ${person.firstname || ''} ${person.lastname || ''}`.trim() + '.', success: 'Alumni profile updated.', fields: [
+  const openAlumniDialog = (person, { verifyAfterSave = false } = {}) => setDialog({ kind: 'alumni', id: person.id, photoEditor: true, verifyAfterSave, submitLabel: verifyAfterSave ? 'Save changes & verify' : 'Save changes', title: verifyAfterSave ? 'Review & verify alumni profile' : 'Edit alumni profile', description: verifyAfterSave
+    ? 'Check the submitted details and correct anything that is wrong. Saving will update the profile and approve it for the alumni directory.'
+    : `Update the directory record for ${person.firstname || ''} ${person.lastname || ''}`.trim() + '.', success: 'Alumni profile updated.', fields: [
     { name: 'firstname', label: 'First name', required: true },
     { name: 'lastname', label: 'Last name', required: false },
     { name: 'email', label: 'Email address', type: 'email', required: false },
@@ -885,7 +926,7 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
     <Table mobileCards columns={[
       { key: 'firstname', label: 'Alumni', render: row => <span className="admin-person"><b>{row.firstname} {row.lastname}</b><small>{row.enroll_no}</small></span> },
       { key: 'college', label: 'College' }, { key: 'course', label: 'Department / course' }, { key: 'batch', label: 'Batch' },
-      ...(canReview ? [{ key: 'email', label: 'Email' }, { key: 'action', label: 'Actions', render: row => <div className="admin-row-actions"><button className="admin-primary-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => verify(row)}>{actionId === String(row.id) ? 'Saving…' : <><Check size={15} /> Verify</>}</button><button className="admin-danger-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => rejectAlumni(row)}>{actionId === String(row.id) ? 'Saving…' : <><X size={14} /> Reject</>}</button><button className="admin-secondary-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => removeRecord('alumni', row)} aria-label={`Delete ${row.firstname} ${row.lastname}`}><Trash2 size={14} /> Delete</button></div> }] : []),
+      ...(canReview ? [{ key: 'email', label: 'Email' }, { key: 'action', label: 'Actions', render: row => <div className="admin-row-actions"><button className="admin-primary-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => openAlumniDialog(row, { verifyAfterSave: true })}><Check size={15} /> Verify</button><button className="admin-danger-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => rejectAlumni(row)}>{actionId === String(row.id) ? 'Saving…' : <><X size={14} /> Reject</>}</button><button className="admin-secondary-btn admin-small-btn" disabled={actionId === String(row.id)} onClick={() => removeRecord('alumni', row)} aria-label={`Delete ${row.firstname} ${row.lastname}`}><Trash2 size={14} /> Delete</button></div> }] : []),
     ]} rows={filterRows(pending)} empty="No alumni profiles are waiting for verification." />
   </>;
 
@@ -1023,11 +1064,13 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
             { value: 'read_only', label: 'Read only' },
             { value: 'super_admin', label: 'Super admin' },
           ],
+          onChange: role => role === 'department_hod' ? {} : { department_id: '' },
         },
         {
           name: 'department_id',
           label: 'Assigned Department (Required for HOD)',
           type: 'select',
+          visibleWhen: values => values.role === 'department_hod',
           options: [
             { value: '', label: '-- Select Department (HOD) --' },
             ...courses.map(course => ({ value: String(course.id), label: course.course })),
@@ -1069,11 +1112,13 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
                 { value: 'read_only', label: 'Read only' },
                 { value: 'super_admin', label: 'Super admin' },
               ],
+              onChange: role => role === 'department_hod' ? {} : { department_id: '' },
             },
             {
               name: 'department_id',
               label: 'Assigned Department (Required for HOD)',
               type: 'select',
+              visibleWhen: values => values.role === 'department_hod',
               options: [
                 { value: '', label: '-- Select Department (HOD) --' },
                 ...courses.map(course => ({ value: String(course.id), label: course.course })),
@@ -1129,7 +1174,7 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
         <div className="admin-page-content">{loading && <div className="admin-loading-bar" role="status">Updating records…</div>}{(contentBySection[activeSection] || renderDashboard)()}</div>
         <footer className="admin-footer">BGI Alumento administration <span>•</span> Changes are recorded in the local database <span>•</span> Designed &amp; Developed by <a href="https://devlinkhub.in" target="_blank" rel="noopener noreferrer"><strong>DevLinkHub Team</strong></a></footer>
       </section>
-      <AdminDialog dialog={dialog} onClose={() => setDialog(null)} onSubmit={submitDialog} busy={dialogBusy} />
+      <AdminDialog dialog={dialog} onClose={() => setDialog(null)} onSubmit={submitDialog} busy={dialogBusy} showToast={showToast} />
       <AdminActionModal modal={actionModal} onClose={() => setActionModal(null)} onConfirm={confirmActionModal} busy={actionModalBusy} />
     </main>
   );

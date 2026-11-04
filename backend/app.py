@@ -116,9 +116,13 @@ class RsvpRequest(BaseModel):
 
 class AdminEventRequest(BaseModel):
     title: str = Field(min_length=3, max_length=200)
+    subtitle: str = Field(default="Official BGI Alumni Gathering", max_length=250)
     description: str = Field(default="", max_length=5000)
     schedule: str = Field(min_length=10, max_length=40)
     banner: str = Field(default="", max_length=1000)
+    venue: str = Field(default="Bansal Institute of Science & Technology, Bhopal", max_length=300)
+    event_type: str = Field(default="HYBRID", pattern="^(CAMPUS|VIRTUAL|HYBRID)$")
+    highlights: str = Field(default="", max_length=2000)
     registration_open: bool = True
 
 
@@ -306,6 +310,15 @@ def ensure_backend_tables() -> None:
             connection.execute(text("ALTER TABLE managed_gallery ADD COLUMN featured INTEGER NOT NULL DEFAULT 0"))
         if "registration_open" not in event_columns:
             connection.execute(text("ALTER TABLE events ADD COLUMN registration_open INTEGER NOT NULL DEFAULT 1"))
+        event_detail_columns = {
+            "event_subtitle": ("TEXT NOT NULL DEFAULT 'Official BGI Alumni Gathering'" if engine.dialect.name == "sqlite" else "VARCHAR(250) NOT NULL DEFAULT 'Official BGI Alumni Gathering'"),
+            "event_venue": ("TEXT NOT NULL DEFAULT 'Bansal Institute of Science & Technology, Bhopal'" if engine.dialect.name == "sqlite" else "VARCHAR(300) NOT NULL DEFAULT 'Bansal Institute of Science & Technology, Bhopal'"),
+            "event_type": ("TEXT NOT NULL DEFAULT 'HYBRID'" if engine.dialect.name == "sqlite" else "VARCHAR(20) NOT NULL DEFAULT 'HYBRID'"),
+            "event_highlights": ("TEXT NOT NULL DEFAULT ''" if engine.dialect.name == "sqlite" else "TEXT NULL"),
+        }
+        for column, definition in event_detail_columns.items():
+            if column not in event_columns:
+                connection.execute(text(f"ALTER TABLE events ADD COLUMN {column} {definition}"))
 
         username = os.getenv("BOOTSTRAP_ADMIN_USERNAME", "").strip()
         password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
@@ -683,6 +696,7 @@ def list_courses():
 def list_events():
     with engine.connect() as connection:
         rows = connection.execute(text("""SELECT e.id, e.title, e.content, e.schedule, e.banner,
+          e.event_subtitle, e.event_venue, e.event_type, e.event_highlights,
           COALESCE(e.registration_open, 1) AS registration_open,
           (SELECT COUNT(*) FROM event_rsvps r WHERE r.event_id=e.id) AS rsvp_count
           FROM events e ORDER BY e.schedule""")).mappings().all()
@@ -698,11 +712,12 @@ def list_events():
         reg_open = bool(row.get("registration_open", 1))
         result.append({
             "id": str(row["id"]), "title": row["title"], "description": row.get("content") or "",
-            "subtitle": "Official BGI Alumni Gathering", "date": scheduled.strftime("%A, %B %d, %Y"),
+            "subtitle": row.get("event_subtitle") or "Official BGI Alumni Gathering", "date": scheduled.strftime("%A, %B %d, %Y"),
             "time": scheduled.strftime("%I:%M %p"), "schedule": scheduled.isoformat(),
-            "venue": "Bansal Institute of Science & Technology, Bhopal",
+            "venue": row.get("event_venue") or "Bansal Institute of Science & Technology, Bhopal",
             "image": row.get("banner") or None, "capacity": 0, "registered": int(row.get("rsvp_count") or 0),
-            "category": "Campus Reunion", "highlights": [],
+            "type": row.get("event_type") or "HYBRID", "category": "Campus Reunion",
+            "highlights": [line.strip() for line in (row.get("event_highlights") or "").splitlines() if line.strip()],
             "registration_open": reg_open,
             "is_past": is_past,
             "can_rsvp": reg_open and not is_past,
@@ -1439,13 +1454,27 @@ def create_admin_event(payload: AdminEventRequest, username: str = Depends(requi
     except ValueError:
         raise HTTPException(422, "Enter a valid event date and time.")
     with engine.begin() as connection:
-        result = connection.execute(text("INSERT INTO events (title, content, schedule, banner, registration_open) VALUES (:title, :content, :schedule, :banner, :reg_open)"), {
+        result = connection.execute(text("""INSERT INTO events
+            (title, content, schedule, banner, registration_open, event_subtitle, event_venue, event_type, event_highlights)
+            VALUES (:title, :content, :schedule, :banner, :reg_open, :subtitle, :venue, :event_type, :highlights)"""), {
             "title": payload.title.strip(), "content": payload.description.strip(),
             "schedule": scheduled.replace(tzinfo=None).isoformat(sep=" "), "banner": payload.banner.strip(),
-            "reg_open": int(payload.registration_open),
+            "reg_open": int(payload.registration_open), "subtitle": payload.subtitle.strip(),
+            "venue": payload.venue.strip(), "event_type": payload.event_type,
+            "highlights": payload.highlights.strip(),
         })
     audit(username, "created", "event", result.lastrowid, payload.title)
     return {"id": result.lastrowid, "created": True}
+
+
+@app.post("/api/admin/events/banner")
+def upload_admin_event_banner(image: UploadFile = File(...), username: str = Depends(require_roles("content_manager"))):
+    filename = persist_upload(image, GALLERY_IMAGE_DIR, s3_folder="gallery", is_public=True)
+    if not filename:
+        raise HTTPException(status_code=400, detail="Choose an event banner image to upload.")
+    url = get_public_s3_url("gallery", filename) if is_s3_enabled() else f"/media/gallery/{filename}"
+    audit(username, "uploaded", "event_banner", filename)
+    return {"url": url}
 
 
 @app.put("/api/admin/events/{event_id}")
@@ -1455,10 +1484,14 @@ def update_admin_event(event_id: int, payload: AdminEventRequest, username: str 
     except ValueError:
         raise HTTPException(422, "Enter a valid event date and time.")
     with engine.begin() as connection:
-        result = connection.execute(text("UPDATE events SET title=:title, content=:content, schedule=:schedule, banner=:banner, registration_open=:reg_open WHERE id=:id"), {
+        result = connection.execute(text("""UPDATE events SET title=:title, content=:content, schedule=:schedule,
+            banner=:banner, registration_open=:reg_open, event_subtitle=:subtitle, event_venue=:venue,
+            event_type=:event_type, event_highlights=:highlights WHERE id=:id"""), {
             "id": event_id, "title": payload.title.strip(), "content": payload.description.strip(),
             "schedule": scheduled.replace(tzinfo=None).isoformat(sep=" "), "banner": payload.banner.strip(),
-            "reg_open": int(payload.registration_open),
+            "reg_open": int(payload.registration_open), "subtitle": payload.subtitle.strip(),
+            "venue": payload.venue.strip(), "event_type": payload.event_type,
+            "highlights": payload.highlights.strip(),
         })
         if not result.rowcount:
             raise HTTPException(404, "Event not found.")

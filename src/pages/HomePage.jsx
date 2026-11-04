@@ -112,7 +112,7 @@ export default function HomePage({ alumniList, membersList = [], eventsList, set
               <div className="hero-bento-grid">
                 <div className="hero-bento-tile hero-bento-top-a">
                   <ImageWithPlaceholder
-                    src="https://bansalgroup-assets.s3.ap-south-1.amazonaws.com/STG/Test_BGI_Bhopal/placement-day-202618.jpeg"
+                    src="https://bansalgroup-assets.s3.ap-south-1.amazonaws.com/STG/Test_BGI_Bhopal/placement-day-202601.jpeg"
                     alt="Graduation celebration"
                     placeholderLabel="Graduation celebration"
                   />

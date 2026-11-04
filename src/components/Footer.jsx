@@ -12,7 +12,7 @@ export default function Footer({ setView }) {
     event.preventDefault();
     const subject = encodeURIComponent('BISTAA alumni updates subscription request');
     const body = encodeURIComponent(`Hello BISTAA Alumni Office,\n\nPlease send alumni, campus, and event updates to this email address: ${subscribeEmail.trim()}\n\nThank you.`);
-    window.location.href = `mailto:info@bistbpl.in?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:alumni@bistbpl.in?subject=${subject}&body=${body}`;
   };
 
   return (
@@ -59,9 +59,9 @@ export default function Footer({ setView }) {
                 <span className="material-symbols-outlined" aria-hidden="true">call</span>
                 <span>+91 91099 54681 · +91 91099 54642</span>
               </a>
-              <a className="footer-contact-item" href="mailto:info@bistbpl.in">
+              <a className="footer-contact-item" href="mailto:alumni@bistbpl.in">
                 <span className="material-symbols-outlined" aria-hidden="true">mail</span>
-                <span>info@bistbpl.in</span>
+                <span>alumni@bistbpl.in</span>
               </a>
             </address>
           </div>

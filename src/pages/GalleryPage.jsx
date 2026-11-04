@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { X, ZoomIn, Sparkles, Award, GraduationCap, Users, Camera, Filter } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X, ZoomIn, Sparkles, Award, GraduationCap, Users, Camera, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import DataLoadNotice from '../components/DataLoadNotice';
 
@@ -63,6 +63,27 @@ export default function GalleryPage({ galleryList, dataLoadFailed, dataLoading, 
     if (selectedCategory === 'ALL') return photoSections;
     return photoSections.filter(sec => sec.id.toLowerCase() === selectedCategory.toLowerCase());
   }, [photoSections, selectedCategory]);
+  const allPhotos = useMemo(() => photoSections.flatMap(section => section.photos), [photoSections]);
+  const activePhotoIndex = activeLightboxImage
+    ? allPhotos.findIndex(photo => String(photo.id) === String(activeLightboxImage.id))
+    : -1;
+  const moveLightbox = direction => {
+    if (allPhotos.length < 2) return;
+    const currentIndex = activePhotoIndex >= 0 ? activePhotoIndex : 0;
+    const nextIndex = (currentIndex + direction + allPhotos.length) % allPhotos.length;
+    setActiveLightboxImage(allPhotos[nextIndex]);
+  };
+
+  useEffect(() => {
+    if (!activeLightboxImage) return undefined;
+    const handleKeyDown = event => {
+      if (event.key === 'ArrowLeft') { event.preventDefault(); moveLightbox(-1); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); moveLightbox(1); }
+      if (event.key === 'Escape') setActiveLightboxImage(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeLightboxImage, activePhotoIndex, allPhotos]);
 
   return (
     <div style={{ minHeight: '80vh' }}>
@@ -199,11 +220,16 @@ export default function GalleryPage({ galleryList, dataLoadFailed, dataLoading, 
                       placeholderLabel={`${activeLightboxImage.title} photo`}
                       style={{ maxWidth: '100%', maxHeight: 480, objectFit: 'contain' }} 
                     />
+                    {allPhotos.length > 1 && <>
+                      <button type="button" className="gallery-lightbox-nav gallery-lightbox-prev" onClick={() => moveLightbox(-1)} aria-label="Previous photo"><ChevronLeft size={23} /></button>
+                      <button type="button" className="gallery-lightbox-nav gallery-lightbox-next" onClick={() => moveLightbox(1)} aria-label="Next photo"><ChevronRight size={23} /></button>
+                    </>}
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span className="tag-chip tag-sector">{activeLightboxImage.category}</span>
+                      {allPhotos.length > 1 && <span className="gallery-lightbox-count">{activePhotoIndex + 1} / {allPhotos.length}</span>}
                     </div>
 
                     <a 

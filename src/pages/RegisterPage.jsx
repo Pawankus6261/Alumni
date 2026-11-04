@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ImageUploadField from '../components/ImageUploadField';
 import SubmissionSuccessModal from '../components/SubmissionSuccessModal';
+import { getCourses } from '../api';
 import { 
   UserPlus, 
   CheckCircle2, 
@@ -21,7 +22,14 @@ const INDIAN_STATES = [
   "Himachal Pradesh", "Kerala", "Assam", "Goa", "Other State / Union Territory"
 ];
 
+const FALLBACK_COURSES = [
+  'Computer Science Engg.', 'Information Technology', 'Electronic & Communication',
+  'Electrical Engg.', 'Mechanical Engg. (B.Tech)', 'Civil Engg (B.Tech)',
+  'MBA (Management)', 'MCA (Computer Applications)',
+];
+
 export default function RegisterPage({ onAddAlumnus, onBecomeBistaa, setView, showToast }) {
+  const [courses, setCourses] = useState(FALLBACK_COURSES);
   const [formData, setFormData] = useState({
     firstname: '',
     lastname: '',
@@ -47,6 +55,18 @@ export default function RegisterPage({ onAddAlumnus, onBecomeBistaa, setView, sh
   const [avatarFile, setAvatarFile] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submission, setSubmission] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    getCourses().then(rows => {
+      if (!active || !Array.isArray(rows) || rows.length === 0) return;
+      const names = rows.map(course => course.course).filter(Boolean);
+      if (names.length === 0) return;
+      setCourses(names);
+      setFormData(current => names.includes(current.course) ? current : { ...current, course: names[0] });
+    }).catch(() => { /* Keep the built-in options if the departments endpoint is unavailable. */ });
+    return () => { active = false; };
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -226,14 +246,7 @@ export default function RegisterPage({ onAddAlumnus, onBecomeBistaa, setView, sh
               <div className="form-group">
                 <label className="form-label">Course / Degree &amp; Branch <span className="req">*</span></label>
                 <select name="course" className="select-field" value={formData.course} onChange={handleChange}>
-                  <option value="Computer Science Engg.">Computer Science Engg. (B.Tech)</option>
-                  <option value="Information Technology">Information Technology (B.Tech)</option>
-                  <option value="Electronic & Communication">Electronic &amp; Communication (B.Tech)</option>
-                  <option value="Electrical Engg.">Electrical Engg. (B.Tech)</option>
-                  <option value="Mechanical Engg.">Mechanical Engg. (B.Tech)</option>
-                  <option value="Civil Engg">Civil Engg (B.Tech)</option>
-                  <option value="Master of Business Administration">MBA (Management)</option>
-                  <option value="Master of Computer Applications">MCA (Computer Applications)</option>
+                  {courses.map(course => <option key={course} value={course}>{course}</option>)}
                 </select>
               </div>
             </div>

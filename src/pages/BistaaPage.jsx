@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import ImageUploadField from '../components/ImageUploadField';
 import DataLoadNotice from '../components/DataLoadNotice';
 import SubmissionSuccessModal from '../components/SubmissionSuccessModal';
+import { verifyAlumnus } from '../api';
+import QRCode from 'qrcode';
 import {
   QrCode,
+  Download,
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
@@ -15,7 +17,19 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
+const BISTAA_UPI_ID = '0795896a0298236.bqr@kotak';
+const BISTAA_PAYMENT_URI = `upi://pay?${new URLSearchParams({
+  pa: BISTAA_UPI_ID,
+  pn: 'Bansal Institute of Science and Technology',
+  am: '300.00',
+  cu: 'INR',
+  tn: 'BISTAA Lifetime Membership',
+  mode: '02',
+  purpose: '00',
+})}`;
+
 export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showToast, dataLoadFailed, dataLoading, onRetryData, prefillData, onConsumePrefill }) {
+  const [paymentQr, setPaymentQr] = useState('');
   const [enrollment, setEnrollment] = useState(() => prefillData?.enrollment?.trim().toUpperCase() || '');
   const [name, setName] = useState(() => prefillData?.name || '');
   const [branch, setBranch] = useState(() => prefillData?.branch || '');
@@ -24,40 +38,94 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
   const [slipFile, setSlipFile] = useState(null);
   const [slipPreviewUrl, setSlipPreviewUrl] = useState(null);
   const [detectedRecord, setDetectedRecord] = useState(null);
+  const [lookupStatus, setLookupStatus] = useState('idle');
+  const [lookupRetry, setLookupRetry] = useState(0);
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submission, setSubmission] = useState(null);
 
   useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(BISTAA_PAYMENT_URI, { width: 320, margin: 2, errorCorrectionLevel: 'M' })
+      .then(url => { if (active) setPaymentQr(url); })
+      .catch(() => { if (active) showToast('The payment QR could not be generated.', 'error'); });
+    return () => { active = false; };
+  }, [showToast]);
+
+  useEffect(() => {
     if (prefillData) onConsumePrefill?.();
   }, []);
 
-  // Autocomplete logic
-  const handleEnrollmentChange = (val) => {
-    const query = val.trim().toUpperCase();
-    setEnrollment(query);
-
+  useEffect(() => {
+    const query = enrollment.trim().toUpperCase();
     if (query.length < 4) {
       setDetectedRecord(null);
-      return;
+      setLookupStatus('idle');
+      return undefined;
     }
 
-    const match = alumniList.find(a => a.enroll_no.toUpperCase() === query);
-    if (match) {
-      setName(`${match.firstname} ${match.lastname}`);
-      setBranch(match.course);
-      setCollege(match.college);
-      setDetectedRecord(match);
-    } else {
-      setDetectedRecord(null);
-      // Auto infer branch
-      if (query.includes('CS')) setBranch('Computer Science Engg.');
-      else if (query.includes('IT')) setBranch('Information Technology');
-      else if (query.includes('EC')) setBranch('Electronic & Communication');
-      else if (query.includes('EE')) setBranch('Electrical Engg.');
-      else if (query.includes('ME')) setBranch('Mechanical Engg.');
-      else if (query.includes('CE')) setBranch('Civil Engg');
+    let active = true;
+    const normalizeEnrollment = value => String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const wanted = normalizeEnrollment(query);
+    setLookupStatus('checking');
+    const timer = setTimeout(async () => {
+      const localMatch = alumniList.find(person => normalizeEnrollment(person.enroll_no || person.enrollment) === wanted);
+      if (localMatch) {
+        if (active) {
+          setDetectedRecord(localMatch);
+          setName(`${localMatch.firstname || ''} ${localMatch.lastname || ''}`.trim());
+          setBranch(localMatch.course || localMatch.branch || '');
+          setCollege(localMatch.college || 'BIST');
+          setLookupStatus('found');
+        }
+        return;
+      }
+
+      try {
+        const result = await verifyAlumnus(query);
+        const person = result?.alumnus;
+        const foundEnrollment = person?.enroll_no || person?.enrollment;
+        if (result?.verified && person && normalizeEnrollment(foundEnrollment) === wanted) {
+          const fullName = person.name || `${person.firstname || ''} ${person.lastname || ''}`.trim();
+          const names = fullName.split(/\s+/);
+          const matchedRecord = {
+            ...person,
+            firstname: person.firstname || names[0] || '',
+            lastname: person.lastname || names.slice(1).join(' '),
+            course: person.course || person.branch || '',
+          };
+          if (active) {
+            setDetectedRecord(matchedRecord);
+            setName(fullName);
+            setBranch(matchedRecord.course);
+            setCollege(person.college || 'BIST');
+            setLookupStatus('found');
+          }
+        } else if (active) {
+          setDetectedRecord(null);
+          setLookupStatus('not-found');
+        }
+      } catch {
+        if (active) {
+          setDetectedRecord(null);
+          setLookupStatus('error');
+        }
+      }
+    }, 450);
+
+    return () => { active = false; clearTimeout(timer); };
+  }, [enrollment, alumniList, lookupRetry]);
+
+  const handleEnrollmentChange = (val) => {
+    const query = val.trim().toUpperCase();
+    if (detectedRecord && query !== enrollment) {
+      setName('');
+      setBranch('');
+      setCollege('BIST');
     }
+    setEnrollment(query);
+    setDetectedRecord(null);
+    setLookupStatus(query.length >= 4 ? 'checking' : 'idle');
   };
 
   const handleSlipImageChange = ({ file, preview }) => {
@@ -67,14 +135,23 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
   };
 
   const copyUpiId = () => {
-    navigator.clipboard.writeText('0795896a0298236.bqr@kotak');
+    navigator.clipboard.writeText(BISTAA_UPI_ID);
     setCopiedUpi(true);
-    showToast('UPI ID copied to clipboard: 0795896a0298236.bqr@kotak', 'success');
+    showToast(`UPI ID copied to clipboard: ${BISTAA_UPI_ID}`, 'success');
     setTimeout(() => setCopiedUpi(false), 3000);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (lookupStatus !== 'found') {
+      showToast(lookupStatus === 'not-found'
+        ? 'No alumni record was found. Complete standard alumni registration first.'
+        : lookupStatus === 'error'
+          ? 'Could not check this enrollment number. Please retry the lookup.'
+          : 'Enter a registered enrollment number and wait for its details to be confirmed.', 'error');
+      return;
+    }
 
     // Validate 12-digit UTR
     const cleanUtr = utr.trim();
@@ -198,6 +275,21 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
                       <span><b>Record detected:</b> {detectedRecord.firstname} {detectedRecord.lastname} ({detectedRecord.college} • {detectedRecord.course})</span>
                     </div>
                   )}
+                  {lookupStatus === 'checking' && <p role="status" style={{ marginTop: '0.45rem', color: '#536b84', fontSize: '0.8rem' }}>Checking the alumni register…</p>}
+                  {lookupStatus === 'not-found' && (
+                    <div role="alert" style={{ marginTop: '0.6rem', padding: '0.8rem', border: '1px solid #fecaca', borderRadius: 'var(--radius-sm)', background: '#fff7f7', color: '#991b1b' }}>
+                      <p style={{ margin: '0 0 0.55rem', fontSize: '0.85rem' }}><b>No alumni record found.</b> Complete standard alumni registration first, then return here to apply for BISTAA membership.</p>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setView('register')}>
+                        Register as an alumnus first <ArrowRight size={14} />
+                      </button>
+                    </div>
+                  )}
+                  {lookupStatus === 'error' && (
+                    <div role="alert" style={{ marginTop: '0.6rem', color: '#9a3412', fontSize: '0.8rem' }}>
+                      Could not check the alumni register. Please check your connection and try again.{' '}
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setLookupRetry(value => value + 1)}>Retry</button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Name */}
@@ -300,8 +392,9 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={isSubmitting}
-                  style={{ width: '100%', padding: '0.85rem', fontSize: '1rem', marginTop: '0.5rem' }}
+                  disabled={isSubmitting || lookupStatus !== 'found'}
+                  title={lookupStatus !== 'found' ? 'A matching alumni record is required before submitting a BISTAA application.' : undefined}
+                  style={{ width: '100%', padding: '0.85rem', fontSize: '1rem', marginTop: '0.5rem', opacity: lookupStatus !== 'found' ? 0.55 : 1, cursor: lookupStatus !== 'found' ? 'not-allowed' : 'pointer' }}
                 >
                   <ShieldCheck size={18} /> {isSubmitting ? 'Submitting application…' : 'Submit BISTAA Application & Verify'}
                 </button>
@@ -323,18 +416,17 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
 
                 {/* Visual QR Frame */}
                 <div className="qr-frame">
-                  <ImageWithPlaceholder
-                    src="assets/PaymentQR.png"
-                    alt="BISTAA UPI payment QR code"
-                    variant="compact"
-                    placeholderLabel="Payment QR unavailable"
-                    style={{ width: 220, height: 220, objectFit: 'contain' }}
-                  />
+                  {paymentQr
+                    ? <img src={paymentQr} alt="BISTAA UPI payment QR code with ₹300 fixed amount" width="220" height="220" style={{ width: 220, height: 220, objectFit: 'contain' }} />
+                    : <span role="status" style={{ color: 'var(--text-tertiary)', fontSize: '.85rem' }}>Preparing fixed ₹300 payment QR…</span>}
                 </div>
 
                 <div className="fee-badge-pill">
-                  Contribution: ₹300/- Only
+                  Fixed payment amount: ₹300/-
                 </div>
+                {paymentQr && <a href={paymentQr} download="BISTAA-UPI-QR-INR-300.png" className="btn btn-secondary btn-sm" style={{ display: 'flex', justifyContent: 'center', width: '100%', marginBottom: '1rem' }}>
+                  <Download size={14} /> Download ₹300 QR
+                </a>}
 
                 {/* Copy UPI ID */}
                 <div style={{
@@ -351,7 +443,7 @@ export default function BistaaPage({ alumniList, onSubmitBistaa, setView, showTo
                 }}>
                   <span style={{ color: 'var(--text-secondary)' }}>UPI ID:</span>
                   <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--bgi-navy-850)' }}>
-                    0795896a0298236.bqr@kotak
+                    {BISTAA_UPI_ID}
                   </code>
                   <button
                     type="button"

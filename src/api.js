@@ -191,6 +191,11 @@ export const createAdminEvent = async (payload) => {
   clearPublicDataCache();
   return res;
 };
+export const uploadAdminEventBanner = (file) => {
+  const form = new FormData();
+  form.append('image', file);
+  return apiRequest('/admin/events/banner', { method: 'POST', body: form });
+};
 export const updateAdminEvent = async (id, payload) => {
   const res = await apiRequest(`/admin/events/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
   clearPublicDataCache();

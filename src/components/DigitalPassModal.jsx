@@ -10,6 +10,12 @@ export default function DigitalPassModal({ passData, onClose }) {
   const officialMembershipId = String(passData?.membership_id || passData?.bistaa_id || '').trim();
   const memberIdentifier = officialMembershipId || enrollment || (passData?.id ? `PROFILE-${passData.id}` : 'ID-UNAVAILABLE');
   const qrPayload = createMemberIdentityPayload({ ...passData, membership_id: memberIdentifier });
+  const passDetails = [
+    ['Member Full Name', passData?.name || `${passData?.firstname || ''} ${passData?.lastname || ''}`.trim()],
+    ['Enrollment Number', enrollment || 'Not provided'],
+    ['College', passData?.college || 'BIST'],
+    ['Degree / Branch', passData?.branch || passData?.course || 'Not provided'],
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -130,8 +136,9 @@ export default function DigitalPassModal({ passData, onClose }) {
               </div>
             </div>
             <div className="digital-pass-status-wrap">
-              <span className="pill pill-emerald digital-pass-status" style={{ background: '#ecfdf5', color: '#166534', border: '1px solid #bbf7d0', fontSize: '0.675rem' }}>
-                <CheckCircle size={12} /> ACTIVE MEMBER
+              <span className="pill pill-emerald digital-pass-status" style={{ display: 'grid', gap: 2, background: '#ecfdf5', color: '#166534', border: '1px solid #bbf7d0', fontSize: '0.625rem', maxWidth: 230, overflowWrap: 'anywhere' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}><CheckCircle size={12} /> MEMBERSHIP ID</span>
+                <b style={{ fontFamily: 'var(--font-mono)', letterSpacing: 0, textAlign: 'right' }}>{officialMembershipId || 'Not assigned'}</b>
               </span>
             </div>
           </div>
@@ -148,28 +155,10 @@ export default function DigitalPassModal({ passData, onClose }) {
             </div>
 
             <div className="pass-fields-col digital-pass-fields" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div>
-                <div className="pass-field-label" style={{ fontSize: '0.675rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Member Full Name</div>
-                <div className="pass-field-val" style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>{passData.name}</div>
-              </div>
-              <div>
-                <div className="pass-field-label" style={{ fontSize: '0.675rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Enrollment Number</div>
-                <div className="pass-field-val" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: '#0f172a' }}>
-                  {enrollment || 'Not provided'}
-                </div>
-              </div>
-              <div>
-                <div className="pass-field-label" style={{ fontSize: '0.675rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>College &amp; Branch</div>
-                <div className="pass-field-val" style={{ fontSize: '0.85rem', color: '#334155' }}>
-                  {passData.college || 'BIST'} • {passData.branch}
-                </div>
-              </div>
-              <div>
-                <div className="pass-field-label" style={{ fontSize: '0.675rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Official Membership ID</div>
-                <div className="pass-field-val" style={{ color: '#003366', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                  {officialMembershipId || 'Verification pending'}
-                </div>
-              </div>
+              {passDetails.map(([label, value]) => <div key={label}>
+                <div className="pass-field-label" style={{ fontSize: '0.675rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>{label}</div>
+                <div className="pass-field-val" style={{ fontSize: label === 'Member Full Name' ? '0.95rem' : '0.85rem', fontWeight: label === 'Member Full Name' ? 700 : 500, color: '#0f172a', fontFamily: label.includes('Number') ? 'var(--font-mono)' : undefined, overflowWrap: 'anywhere' }}>{value}</div>
+              </div>)}
             </div>
 
             <div className="pass-qr-box digital-pass-qr" style={{ textAlign: 'center' }}>

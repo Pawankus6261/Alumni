@@ -17,12 +17,13 @@ const ActiveMembersPage = lazy(() => import('./pages/ActiveMembersPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
 const GalleryPage = lazy(() => import('./pages/GalleryPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
+const VerifyAlumPage = lazy(() => import('./pages/VerifyAlumPage'));
 
 import { clearPublicDataCache, getAdminSlipUrl, getCachedPublicBootstrap, getPublicBootstrap, getAlumni, submitBistaaApplication, submitRegistration, createRsvp } from './api';
 
 const AVAILABLE_VIEWS = new Set([
   'home', 'directory', 'bistaa', 'register', 'status',
-  'active-members', 'events', 'gallery', 'admin'
+  'active-members', 'events', 'gallery', 'admin', 'verify'
 ]);
 
 const VIEW_PATHS = {
@@ -35,6 +36,7 @@ const VIEW_PATHS = {
   events: '/events',
   gallery: '/gallery',
   admin: '/admin',
+  verify: '/verify-alum',
 };
 
 const getViewFromLocation = () => {
@@ -43,12 +45,12 @@ const getViewFromLocation = () => {
   if (pathView) return pathView;
   if (path === '/active-members') return 'active-members';
   if (path === '/membership' || path === '/bistaa/register') return 'bistaa';
-  if (path === '/verify-alum' || path === '/verify' || path === '/verify-alumni') return 'status';
+  if (path === '/verify' || path === '/verify-alumni') return 'verify';
 
   // Read old hash URLs once, then replace them with their clean route.
   const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
   if (hash === 'bistaa') return 'active-members';
-  if (hash === 'verify' || hash === 'verify-alum') return 'status';
+  if (hash === 'verify' || hash === 'verify-alum') return 'verify';
   return AVAILABLE_VIEWS.has(hash) ? hash : 'home';
 };
 
@@ -209,7 +211,7 @@ export default function App() {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       
       {/* 1. Header & Navigation */}
-      {currentView !== 'admin' && <Navbar currentView={currentView} setView={setCurrentView} />}
+      {currentView !== 'admin' && currentView !== 'verify' && <Navbar currentView={currentView} setView={setCurrentView} />}
 
       {/* 2. Main Page View Content */}
       <main style={{ flex: 1 }}>
@@ -264,6 +266,17 @@ export default function App() {
             onOpenSlip={(data) => setSlipPreviewData(data)}
             onOpenDigitalPass={(app) => setDigitalPassData(app)}
             setView={setCurrentView}
+          />
+        )}
+
+        {currentView === 'verify' && (
+          <VerifyAlumPage
+            alumniList={alumniList}
+            membersList={membersList}
+            onOpenDigitalPass={app => setDigitalPassData(app)}
+            setView={setCurrentView}
+            showToast={showToast}
+            qrOnly
           />
         )}
 
@@ -328,7 +341,7 @@ export default function App() {
       </main>
 
       {/* 3. Footer */}
-      {currentView !== 'admin' && <Footer setView={setCurrentView} />}
+      {currentView !== 'admin' && currentView !== 'verify' && <Footer setView={setCurrentView} />}
 
       {/* 4. Modals */}
       {slipPreviewData && (
