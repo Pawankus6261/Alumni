@@ -961,7 +961,7 @@ export default function AdminPage({ alumniList = [], onOpenSlip, onOpenDigitalPa
         { key: 'email', label: 'Email' },
         { key: 'phone', label: 'Phone' },
         { key: 'profile_status', label: 'Profile', render: row => <span className={`admin-status ${row.profile_status === 'Verified' ? 'admin-status-active' : row.profile_status === 'Rejected' ? 'admin-status-rejected' : 'admin-status-pending_verification'}`}>{row.profile_status}</span> },
-        { key: 'actions', label: 'Actions', render: row => <div className="admin-row-actions">{canReview && <button className="admin-secondary-btn admin-small-btn" onClick={() => openBistaaMemberDialog(row)}><Pencil size={14} /> Edit</button>}<button className="admin-secondary-btn admin-small-btn" onClick={() => onOpenDigitalPass?.({ name: row.name, enrollment: row.enrollment, college: row.college, branch: row.branch, membership_id: row.membership_id })}>View pass</button></div> },
+        { key: 'actions', label: 'Actions', render: row => <div className="admin-row-actions">{canReview && <button className="admin-secondary-btn admin-small-btn" onClick={() => openBistaaMemberDialog(row)}><Pencil size={14} /> Edit</button>}<button className="admin-secondary-btn admin-small-btn" onClick={() => onOpenDigitalPass?.({ name: row.name, enrollment: row.enrollment, college: row.college, branch: row.branch, membership_id: row.membership_id, photo_url: row.photo_url || row.img_url || row.avatar || '', img_url: row.photo_url || row.img_url || row.avatar || '', avatar: row.photo_url || row.img_url || row.avatar || '' })}>View pass</button></div> },
       ]} rows={filteredMembers} empty="No BISTAA members match your search." />
     </>;
   };

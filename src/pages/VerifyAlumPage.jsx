@@ -641,7 +641,7 @@ export default function VerifyAlumPage({
                   }}
                 >
                   <ImageWithPlaceholder
-                    src={alum.img_url || alum.photo_url || alum.avatar}
+                    src={alum.img_url || alum.photo_url || alum.avatar_url || alum.avatar || alum.image}
                     alt={alum.name}
                     variant="avatar"
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}

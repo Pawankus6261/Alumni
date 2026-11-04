@@ -146,7 +146,7 @@ export default function DigitalPassModal({ passData, onClose }) {
           <div className="pass-grid-body digital-pass-body" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '1.5rem', alignItems: 'center' }}>
             <div className="pass-avatar-box digital-pass-avatar" style={{ width: 84, height: 84, borderRadius: '4px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
               <ImageWithPlaceholder
-                src={passData.img_url || passData.photo_url || passData.avatar}
+                src={passData.img_url || passData.photo_url || passData.avatar_url || passData.avatar || passData.image}
                 alt={passData.name}
                 variant="avatar"
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
